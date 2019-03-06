@@ -11,8 +11,6 @@ from fitparse import FitFile
 from datetime import datetime
 
 
-
-
 def open_fit(filepath):
 
     ext = filepath.split('.')[-1]
@@ -46,20 +44,20 @@ def parse_fit(filepath, message_names=None, field_names=None, exclude_unknowns=T
 
     fitfile = open_fit(filepath)
 
-    # parse all message types if no message names are given
-    if not message_names:
-        message_names = list(set([m.name for m in fitfile.messages]))
+    if message_names:
+        if isinstance(message_names, str):
+            message_names = [message_names]
 
+    # parse all message types if no message names are given
+    else:
+        message_names = set([m.name for m in fitfile.messages])
         if exclude_unknowns:
             message_names = [name for name in message_names if not name.startswith('unknown_')]
 
-    if isinstance(message_names, str):
-        message_names = [message_names]
-
     data = {}
     for message_name in message_names:
-        _field_names = field_names.get(message_name) if field_names else None
-        data[message_name] = _concat_messages(fitfile, message_name, _field_names, exclude_unknowns)
+        message_field_names = field_names.get(message_name) if field_names else None
+        data[message_name] = _concat_messages(fitfile, message_name, message_field_names, exclude_unknowns)
 
     # fitfile.close()
     return data
@@ -81,19 +79,19 @@ def _concat_messages(fitfile, message_name, field_names=None, exclude_unknowns=T
     '''
 
     data = []
-    for message in fitfile.get_messages(message_name):
+    messages = fitfile.get_messages(message_name)
 
-        if field_names:
-            _field_names = field_names
+    if field_names:
+        for message in messages:
+            data.append({name: message.get_value(name) for name in field_names})
 
-        # parse all fields if no field_names are given
-        else:
-            if exclude_unknowns:
-                _field_names = [field.name for field in message if not field.name.startswith('unknown_')]
-            else:
-                _field_names = [field.name for field in message]
-
-        data.append({name: message.get_value(name) for name in _field_names})
+    # parse all fields if no field_names are given
+    elif exclude_unknowns:
+        for message in messages:
+            data.append({f.name: f.value for f in message if not f.name.startswith('unknown_')})
+    else:
+        for message in messages:
+            data.append({f.name: f.value for f in message})
 
     data = pd.DataFrame(data=data)
     return data
