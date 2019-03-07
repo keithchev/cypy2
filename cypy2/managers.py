@@ -14,17 +14,18 @@ from . import file_utils
 from . import file_settings
 
 
-class ActivityManager(object):
+class StravaExportManager(object):
 
-    def __init__(self, strava_dirpath, from_cache=False):
+    def __init__(self, root_dirpath, from_cache=False):
         
-        self.strava_dirpath = strava_dirpath
-        self.strava_dirname = strava_dirpath.split(os.sep)[-1]
+        self.root_dirpath = root_dirpath
+        self.root_dirname = root_dirpath.split(os.sep)[-1]
 
-        self.cache_dirpath = os.path.join(os.getenv('HOME'), self.strava_dirname)
+        # where to cache the parsed data
+        self.cache_dirpath = os.path.join(os.getenv('HOME'), self.root_dirname)
         os.makedirs(self.cache_dirpath, exist_ok=True)
 
-        self.strava_metadata = pd.read_csv(os.path.join(strava_dirpath, 'activities.csv'))
+        self.metadata = pd.read_csv(os.path.join(self.root_dirpath, 'activities.csv'))
 
         if from_cache:
             self.parsed_data = self._load_from_cache(self.cache_dirpath)
@@ -49,21 +50,26 @@ class ActivityManager(object):
         return data
 
 
-
     def parse_all(self):
         '''
-        Parse all of the FIT files appearing in the Strava metadata
+        Parse all of the FIT files appearing in the Strava export
+
+        Returns
+        -------
+        self.parsed_data : list of dicts of dataframes, keyed by message name
+        self.parse_errors : list of metadata rows on which file_utils.parse_fit failed
+
         '''
         data = []
         errors = []
-        for ind, row in self.strava_metadata.iterrows():    
+        for ind, row in self.metadata.iterrows():    
             sys.stdout.write('\r%s: %s' % (row.date, row.filename))
 
             if pd.isna(row.filename) or 'gpx' in row.filename.split('.'):
                 continue
 
             try:
-                d = file_utils.parse_fit(os.path.join(self.strava_dirpath, row.filename))
+                d = file_utils.parse_fit(os.path.join(self.root_dirpath, row.filename))
             except:
                 errors.append(row)
                 continue
@@ -87,6 +93,6 @@ class ActivityManager(object):
             print('Warning: cached data already exists')
             return
 
-        with open(filepath 'wb') as file:
+        with open(filepath, 'wb') as file:
             pickle.dump(self.parsed_data, file)
 
