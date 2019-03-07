@@ -43,11 +43,13 @@ CREATE DATABASE :dbname
 SET search_path = public, pg_catalog;
 SET default_tablespace = '';
 
--- TODO: how does Garmin label walks and hikes?
-CREATE TYPE SPORT_TYPE AS ENUM ('cycling', 'running');
-CREATE TYPE SPORT_SUBTYPE AS ENUM ('generic', 'indoor_cycling');
+-- from Strava metadata
+CREATE TYPE ACTIVITY_TYPE AS ENUM ('ride', 'run', 'walk', 'hike');
 
-CREATE TYPE STRAVA_TYPE AS ENUM ('ride', 'run', 'walk', 'hike');
+-- 'indoor' from FIT file's sub_sport field; 'cross' must be manually labeled
+CREATE TYPE CYCLING_TYPE AS ENUM ('road', 'cross', 'indoor');
+
+-- from Strava metadata
 CREATE TYPE BIKE_NAME AS ENUM ('giant-defy-advanced', 'lynskey-cx');
 
 CREATE TYPE DEVICE_MODEL AS ENUM (
@@ -57,7 +59,7 @@ CREATE TYPE DEVICE_MODEL AS ENUM (
     'wahoo-elemnt-bolt', 
 );
 
--- HRM_TYPE is intended to label the use of the Fenix 3's built-in HRM
+-- 'internal' indicates the use of the Fenix 3's built-in HRM
 CREATE TYPE HRM_TYPE AS ENUM ('external', 'internal');
 
 
@@ -65,16 +67,12 @@ CREATE TABLE metadata (
     -- activity_id is timestamp in ymdHMS format
     activity_id char(14),
 
-    -- these columns are directly from Strava's 'activity.csv'
-    filename varchar,
+    fitfilename varchar,
     strava_title varchar,
     strava_date timestamp,
-    strava_type STRAVA_TYPE,
+    activity_type ACTIVITY_TYPE,
+    cycling_type CYCLING_TYPE,
     bike_name BIKE_NAME,
-
-    -- these columns are from the 'sport' FitFile message
-    sport_type SPORT_TYPE,
-    sport_subtype SPORT_SUBTYPE,
 
     -- these columns are inferred from the 'device_info' message
     device_model DEVICE_MODEL,

@@ -87,7 +87,6 @@ field_names['record'] = [
 #  ----------------------------------------------------------------------------- 
 field_names['session'] = [
     
-    'sport',
     'timestamp',
     'start_time',
 
@@ -107,29 +106,17 @@ field_names['session'] = [
     'normalized_power',
     'threshold_power',
 
-    'time_in_hr_zone',
-    'time_in_power_zone',
-
     'total_ascent',
-    'total_calories',
     'total_descent',
+    'total_work',
+    'total_calories',
     'total_distance',
     'total_elapsed_time',
     'total_timer_time',
-    'total_work',
 
     'intensity_factor',
     'training_stress_score'
 ]
-
-# -----------------------------------------------------------------------------
-#
-# exclude time-in-zone fields (whose values are tuples)
-#
-for name in ['time_in_power_zone', 'time_in_hr_zone']:
-    field_names['session'].remove(name)
-#
-#  ----------------------------------------------------------------------------- 
 
 
 # for reference only: 'session' fields in Garmin but not Wahoo FIT files
