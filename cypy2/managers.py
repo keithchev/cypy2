@@ -79,7 +79,7 @@ class StravaExportManager(object):
             data.append(d)
 
         self.parsed_data = data
-        self.parse_errors = errors
+        self.parsing_errors = errors
 
 
     def to_cache(self):
