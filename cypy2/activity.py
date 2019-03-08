@@ -300,23 +300,17 @@ class Activity(object):
         manufacturers = [s.lower() for s in device_info.manufacturer.unique() if isinstance(s, str)]
         product_names = [s.lower() for s in device_info.product_name.unique() if isinstance(s, str)]
 
-        power_flag, speed_flag, hrm_flag = False, False, False
-
         # garmin (note that power meter is only indicated by '4iiii' in manufacturers)
-        if device_manufacturer=='garmin' and 'hrm3ss' in product_names:
-                hrm_flag = True
-        if device_manufacturer=='garmin' and 'bsm' in product_names:
-                speed_flag = True
-        if device_manufacturer=='garmin' and '4iiiis' in manufacturers:
-                power_flag = True
+        if device_manufacturer=='garmin':
+            speed_flag = 'bsm' in product_names
+            hrm_flag = 'hrm3ss' in product_names
+            power_flag = '4iiiis' in manufacturers
 
         # wahoo
-        if device_manufacturer=='wahoo' and 'heartrate' in product_names:
-                hrm_flag = True
-        if device_manufacturer=='wahoo' and 'power' in product_names:
-                power_flag = True
-        if device_manufacturer=='wahoo' and 'speed' in product_names:
-                speed_flag = True  
+        if device_manufacturer=='wahoo':
+            speed_flag = 'speed' in product_names
+            hrm_flag = 'heartrate' in product_names
+            power_flag = 'power' in product_names
 
         
         flags = {'hrm': hrm_flag, 'power': power_flag, 'speed': speed_flag}
