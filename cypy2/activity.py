@@ -23,7 +23,7 @@ class Activity(object):
         self, 
         source, 
         db_data=None, 
-        raw_data=None, 
+        fit_data=None, 
         db_metadata=None,
         strava_metadata=None, 
         manual_metadata=None):
@@ -34,11 +34,11 @@ class Activity(object):
         Parameters
         ----------
         source : 'local' or 'db'
-        raw_data : parsed raw data, as a dict of dataframes keyed by message name,
-                   corresponding to a single FIT file (if source=='local')
-        db_data : raw data retrieved from a cypy2 database (if source=='db')
+        fit_data : the parsed data from a single FIT file
+                   as a dict of dataframes keyed by message name
+        db_data : raw data retrieved from a cypy2 database
         strava_metadata : optional strava-related metadata
-        manual_metadata : optional manually-defined metadata
+        manual_metadata : optional manually-defined metadata (currently unused)
 
         TODO: decide on format/structure of db_data
 
@@ -61,15 +61,15 @@ class Activity(object):
         
         '''
 
-        if raw_data is None and db_data is None:
-            raise ValueError('Either raw_data or db_data must be provided')
+        if fit_data is None and db_data is None:
+            raise ValueError('Either fit_data or db_data must be provided')
 
         assert(source in ['local', 'db'])
         self.source = source
 
         # only one of db_data and raw_metadata should be not None
         self._db_data = db_data
-        self._raw_data = raw_data
+        self._fit_data = fit_data
 
         # only one 'type' of metadata here should be not None
         self._db_metadata = db_metadata
@@ -83,10 +83,10 @@ class Activity(object):
             self.metadata = self._generate_metadata()
 
             # various consistency checks
-            self._validate_raw_data()
+            self._validate_fit_data()
 
             # organize the raw data by summary, pauses, and timeseries
-            self._parse_raw_data(raw_data)
+            self._parse_fit_data(fit_data)
 
         # initialize from raw database data
         # TODO: is there a need for data validation here?
@@ -96,16 +96,16 @@ class Activity(object):
 
 
     @classmethod
-    def from_fit(cls, filepath, metadata=None):
+    def from_fit(cls, filepath):
         '''
         Initialize directly from a FIT file
 
-        Intended for testing only;
-        note that raw_data will not have a 'strava_metadata' key
+        **intended for testing only**
+        note that fit_data will not have a 'strava_metadata' key
 
         '''
         data = file_utils.parse_fit(filepath)
-        activity = cls(source='local', raw_data=data, manual_metadata=metadata)
+        activity = cls(source='local', fit_data=data)
         return activity
 
 
@@ -120,7 +120,7 @@ class Activity(object):
 
         '''
         metadata = data['strava_metadata']
-        activity = cls(source='local', raw_data=data, strava_metadata=metadata)
+        activity = cls(source='local', fit_data=data, strava_metadata=metadata)
         return activity
 
 
@@ -140,14 +140,13 @@ class Activity(object):
     @staticmethod
     def id_from_fit(filepath=None, file_id=None):
         '''
-        Generate a unique activity_id from a FIT file
-
-        Uses the timestamp in the FIT file's file_id message
+        Generate a unique activity_id from a FIT file,
+        using the timestamp in the FIT file's file_id message
 
         Parameters
         ----------
         filepath : path to a FIT file
-        file_id : file_id message as a pandas dataframe
+        file_id : file_id message as a pandas dataframe or series
         
         '''
         if filepath is not None:
@@ -203,7 +202,7 @@ class Activity(object):
 
 
         # message types we need (we can assume all exist, except for 'sport')
-        d = self._raw_data
+        d = self._fit_data
         file_id, device_info, session, sport = \
             d.get('file_id'), d.get('device_info'), d.get('session'), d.get('sport')
 
@@ -327,7 +326,7 @@ class Activity(object):
 
 
 
-    def _validate_raw_data(self):
+    def _validate_fit_data(self):
         '''
         Check the integrity of raw (FIT-file) data
         
@@ -345,7 +344,7 @@ class Activity(object):
             if sensor=='heart_rate' and self.metadata['device_model']=='fenix3':
                 continue
 
-            flag = sensor in self._raw_data['record'].columns
+            flag = sensor in self._fit_data['record'].columns
             if self.metadata['flags'][sensor] and not flag:
                 print('Warning: activity %s has %s sensor but no records' % (activity_id, sensor))
             if not self.metadata['flags'][sensor] and flag:
@@ -353,7 +352,7 @@ class Activity(object):
         
 
 
-    def _parse_raw_data(self, raw_data):
+    def _parse_fit_data(self, fit_data):
         '''
         Parse/organize raw data when self.source=='local'
 
