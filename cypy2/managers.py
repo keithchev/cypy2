@@ -12,6 +12,81 @@ from io import StringIO
 
 from . import file_utils
 from . import file_settings
+from . activity import Activity
+
+
+
+class ActivityManager(object):
+
+    def __init__(self, activities):
+
+        self._metadata = pd.DataFrame([a.metadata for a in activities])
+        self._activities = activities
+
+
+    @classmethod
+    def from_strava_export(cls, strava_export_manager):
+
+        activities = []
+        for ind, d in enumerate(strava_export_manager.parsed_data):
+            try:
+                activity = Activity.from_strava_export(d)
+            except:
+                print('Warning: error parsing data at index %s' % ind)
+
+            activities.append(activity)
+
+        return cls(activities)
+
+
+    @classmethod
+    def from_db(cls, conn):
+        '''
+        load all activities from a cypy2 database
+        
+        something like this:
+
+        activity_ids = get_all_activity_ids(conn)
+        for activity_id in activity_ids:
+            activity = Activity.from_db(conn, activity_id)
+        
+        '''
+        pass
+
+
+
+    def activities(self, activity_id=None, **kwargs):
+        '''
+        Filter activities
+        '''
+
+        _activities = self._activities
+        if activity_id:
+            _activities = [a for a in _activities if a.metadata['activity_id'].startswith(activity_id)]
+
+        for key, val in kwargs.items():
+            _activities = [a for a in _activities if a.metadata[key]==val]
+        return _activities
+
+
+    def metadata(self, activity_id=None, **kwargs):
+        '''
+        Filter metadata
+        '''
+
+        metadata = self._metadata.copy()
+        if activity_id:
+            metadata = metadata.loc[metadata.activity_id.apply(str.startswith(activity_id))]
+
+        for key, val in kwargs.items():
+            if key in metadata.columns:
+                metadata = metadata.loc[metadata[key]==val]
+
+        return metadata
+
+
+
+
 
 
 class StravaExportManager(object):
@@ -34,7 +109,7 @@ class StravaExportManager(object):
         if from_cache:
             self.parsed_data = self._load_from_cache(self.cache_dirpath)
         else:
-            # for now, we will let the user call self.parse_all manually
+            # for now, we will leave it to the user to call self.parse_all manually
             pass
 
 

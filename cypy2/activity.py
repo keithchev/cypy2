@@ -125,15 +125,24 @@ class Activity(object):
 
 
     @classmethod
-    def from_db(cls, data):
+    def from_db(cls, conn, activity_id, load=None):
         '''
-        Initialize from raw and maybe processed data from cypy2 database
+        Initialize from the raw and maybe processed data from a cypy2 database
 
         TODO: decide whether the data can include previously-processed data
-
+        
+        load : 'raw', 'processed', or 'all'
         '''
         activity = cls(source='db', db_data=data)
         return activity
+
+
+    def to_db(self, conn):
+        '''
+        Insert the activity's data into a cypy2 database
+        '''
+        with conn.cursor() as cursor:
+            pass
 
 
 
