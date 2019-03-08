@@ -197,7 +197,7 @@ class Activity(object):
 
         def _clean_string(val):
             if pd.isna(val): return None
-            return val.lower().replace(' ', '-')
+            return str(val).lower().replace(' ', '-')
 
 
         # message types we need (we can assume all exist, except for 'sport')
@@ -296,8 +296,9 @@ class Activity(object):
         # sensor flags from device_info
         #
         # ------------------------------------------------------------------------------------
-        manufacturers = device_info.manufacturer.unique()
-        product_names = device_info.product_name.unique()
+        # defensive lowercase
+        manufacturers = [s.lower() for s in device_info.manufacturer.unique() if isinstance(s, str)]
+        product_names = [s.lower() for s in device_info.product_name.unique() if isinstance(s, str)]
 
         power_flag, speed_flag, hrm_flag = False, False, False
 
@@ -309,12 +310,12 @@ class Activity(object):
         if device_manufacturer=='garmin' and '4iiiis' in manufacturers:
                 power_flag = True
 
-        # wahoo (note the capitalization)
-        if device_manufacturer=='wahoo' and 'Heartrate' in product_names:
+        # wahoo
+        if device_manufacturer=='wahoo' and 'heartrate' in product_names:
                 hrm_flag = True
-        if device_manufacturer=='wahoo' and 'Power' in product_names:
+        if device_manufacturer=='wahoo' and 'power' in product_names:
                 power_flag = True
-        if device_manufacturer=='wahoo' and 'Speed' in product_names:
+        if device_manufacturer=='wahoo' and 'speed' in product_names:
                 speed_flag = True  
 
         
