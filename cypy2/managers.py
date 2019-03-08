@@ -22,7 +22,11 @@ class StravaExportManager(object):
         self.root_dirname = root_dirpath.split(os.sep)[-1]
 
         # where to cache the parsed data
-        self.cache_dirpath = os.path.join(os.getenv('HOME'), self.root_dirname)
+        self.cache_dirpath = os.path.join(
+            os.getenv('HOME'), 
+            'parsed-strava-exports', 
+            self.root_dirname)
+
         os.makedirs(self.cache_dirpath, exist_ok=True)
 
         self.metadata = pd.read_csv(os.path.join(self.root_dirpath, 'activities.csv'))

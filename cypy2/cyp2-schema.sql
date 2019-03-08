@@ -53,21 +53,18 @@ CREATE TYPE CYCLING_TYPE AS ENUM ('road', 'cross', 'indoor');
 CREATE TYPE BIKE_NAME AS ENUM ('giant-defy-advanced', 'lynskey-cx');
 
 CREATE TYPE DEVICE_MODEL AS ENUM (
-    'garmin-fenix-3', 
-    'garmin-forerunner-220'
-    'garmin-edge-520', 
-    'wahoo-elemnt-bolt', 
+    'fenix3', 
+    'fr220'
+    'edge520', 
+    'elemnt',  -- nb the typo is correct
 );
-
--- 'internal' indicates the use of the Fenix 3's built-in HRM
-CREATE TYPE HRM_TYPE AS ENUM ('external', 'internal');
 
 
 CREATE TABLE metadata (
-    -- activity_id is timestamp in ymdHMS format
+
     activity_id char(14),
 
-    fitfilename varchar,
+    filename varchar,
     strava_title varchar,
     strava_date timestamp,
     activity_type ACTIVITY_TYPE,
@@ -79,7 +76,6 @@ CREATE TABLE metadata (
     power_meter_flag boolean,
     speed_sensor_flag boolean,
     heart_rate_monitor_flag boolean,
-    heart_rate_monitor_type HRM_TYPE
     
     PRIMARY KEY (activity_id)
 );
@@ -93,14 +89,14 @@ CREATE TABLE device_summary (
 );
 
 
-CREATE TABLE device_events (
+CREATE TABLE pauses (
 
     PRIMARY KEY (),
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
 );
 
 
-CREATE TABLE records (
+CREATE TABLE timepoints (
 
     PRIMARY KEY (),
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
