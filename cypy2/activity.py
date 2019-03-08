@@ -78,10 +78,12 @@ class Activity(object):
 
         # initialize from raw FIT-file data
         if source=='local':
-            self._validate_raw_data()
 
             # generate/infer/organize metadata
             self.metadata = self._generate_metadata()
+
+            # various consistency checks
+            self._validate_raw_data()
 
             # organize the raw data by summary, pauses, and timeseries
             self._parse_raw_data(raw_data)
@@ -174,9 +176,9 @@ class Activity(object):
         Columns:        
             - activity_id
             - activity type
+            - cycling type (indoor/road)
             - FIT file timestamp
             - strava timestamp, title, gear
-            - cycling type (indoor/road)
             - GPS device make/model
             - HRM, power meter, and speed sensor flags
 
@@ -213,10 +215,10 @@ class Activity(object):
         # only appears in Wahoo (e.g., non-Garmin) file_id messages;
         file_id.rename(columns={'garmin_product': 'product_name', 'product': 'product_name'}, inplace=True)
 
-        # there should always be only one message of these types
+        # there should always be only one message (row) for these message types
         file_id, session = _df_to_series(file_id), _df_to_series(session)
 
-        # strava metadata as a series for convenience
+        # strava metadata as a series for convenience (it always has one row by definition)
         strava_metadata = _df_to_series(self._strava_metadata)
 
         # ------------------------------------------------------------------------------------
@@ -232,7 +234,7 @@ class Activity(object):
         # ------------------------------------------------------------------------------------
         #
         # from strava metadata, if we have it,
-        # we get the activity type and then keep the name/date/filename/gear
+        # we get the activity type and then copy name/date/filename/gear
         #
         # ------------------------------------------------------------------------------------
         if strava_metadata is not None:
@@ -293,27 +295,28 @@ class Activity(object):
 
         # ------------------------------------------------------------------------------------
         #
-        # sensor flags from device_info
+        # sensor flags (true when the sensor is present) from device_info
+        #
+        # Note that using the 'antplus_device_type' column is likely the most robust way
+        # of determining which sensors where present, since its values appear to be
+        # device-independent. 
+        #
+        # Notably, the names appearing in the 'product_name' column are not reliable;
+        # for example, between 2016-04-23 and 2016-06-17, files from the Edge 520 
+        # have no HRM-like value in that column, despite having a row with 'heart_rate'
+        # in 'antplus_device_type' as well as a 'heart_rate' column in the record messages.
         #
         # ------------------------------------------------------------------------------------
-        # defensive lowercase
-        manufacturers = [s.lower() for s in device_info.manufacturer.unique() if isinstance(s, str)]
-        product_names = [s.lower() for s in device_info.product_name.unique() if isinstance(s, str)]
+        hrm_flag, power_flag, speed_flag = False, False, False
 
-        # garmin (note that power meter is only indicated by '4iiii' in manufacturers)
-        if device_manufacturer=='garmin':
-            speed_flag = 'bsm' in product_names
-            hrm_flag = 'hrm3ss' in product_names
-            power_flag = '4iiiis' in manufacturers
+        if 'antplus_device_type' in device_info.columns:
+            device_types = [s.lower() for s in device_info.antplus_device_type.apply(str).unique()]
+            hrm_flag = 'heart_rate' in device_types
+            power_flag = 'bike_power' in device_types
+            speed_flag = 'bike_speed' in device_types
 
-        # wahoo
-        if device_manufacturer=='wahoo':
-            speed_flag = 'speed' in product_names
-            hrm_flag = 'heartrate' in product_names
-            power_flag = 'power' in product_names
 
-        
-        flags = {'hrm': hrm_flag, 'power': power_flag, 'speed': speed_flag}
+        flags = {'heart_rate': hrm_flag, 'power': power_flag, 'speed': speed_flag}
         values = activity_type, cycling_type, device_manufacturer, device_model, flags, strava_metadata
         attrs = 'activity_type', 'cycling_type', 'device_manufacturer', 'device_model', 'flags', 'strava'
 
@@ -332,7 +335,22 @@ class Activity(object):
         - 
         '''
 
-        pass
+        activity_id = self.metadata['activity_id']
+
+        # check that we have timeseries data for the expected sensors
+        # (there is always speed data, with or without a sensor)
+        for sensor in ['heart_rate', 'power']:
+
+            # skip fenix3 because it has a built-in HRM
+            if sensor=='heart_rate' and self.metadata['device_model']=='fenix3':
+                continue
+
+            flag = sensor in self._raw_data['record'].columns
+            if self.metadata['flags'][sensor] and not flag:
+                print('Warning: activity %s has %s sensor but no records' % (activity_id, sensor))
+            if not self.metadata['flags'][sensor] and flag:
+                print('Warning: activity %s has %s records but no sensor' % (activity_id, sensor))
+        
 
 
     def _parse_raw_data(self, raw_data):
