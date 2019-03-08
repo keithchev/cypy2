@@ -222,49 +222,54 @@ class Activity(object):
 
         # ------------------------------------------------------------------------------------
         #
-        # initialize metadata with activity_id and the file_id timestamp
+        # initialize metadata with activity_id and file_id timestamp
         #
         # ------------------------------------------------------------------------------------
-        metadata = {}
-        metadata['activity_id'] = self.id_from_fit(file_id=file_id)
-        metadata['file_date'] = str(file_id.time_created)
+        metadata = {
+            'activity_id': self.id_from_fit(file_id=file_id),
+            'file_date': str(file_id.time_created),
+        }
 
+        # copy some fields directly from strava metadata
+        if strava_metadata is not None:
+            metadata.update({
+                'strava_date': strava_metadata['date'],
+                'strava_title': strava_metadata['name'],
+                'filename': strava_metadata['filename'],
+            })
 
         # ------------------------------------------------------------------------------------
         #
-        # from strava metadata, if we have it,
-        # we get the activity type and then copy name/date/filename/gear
+        # activity type from either strava metadata or 'sport' field of 'session' message
+        # (session.sport is always 'cycling', 'running', or 'hiking')
         #
         # ------------------------------------------------------------------------------------
         if strava_metadata is not None:
             activity_type = strava_metadata.type.lower()
-
-            strava_metadata = {
-                'date': strava_metadata['date'],
-                'title': strava_metadata['name'],
-                'filename': strava_metadata['filename'],
-                'gear': _clean_string(strava_metadata['gear']),
-            }
-
-        # without strava, we get activity type from session.sport, 
-        # which is always 'cycling', 'running', or 'hiking'
         else:
             activity_type = activity_type_map[session.sport.lower()]
+        metadata['activity_type'] = activity_type
 
 
         # ------------------------------------------------------------------------------------
         #
-        # cycling type from 'sport' message, if it exists
-        # 
-        # Note that sport *can* have more than one row, ergo the defensive .iloc[0]
+        # cycling type from 'sport' message and bike name from strava metadata
+        #
+        # Note that 'sport' messages *can* have more than one row, ergo the defensive .iloc[0]
         # (so far, this is the case only for 'hiking' activities)
         #
         # ------------------------------------------------------------------------------------ 
-        cycling_type = None
+        cycling_type, bike_name = None, None
         if activity_type=='ride':
             cycling_type = 'road'
             if sport is not None and sport.iloc[0].sub_sport=='indoor_cycling':
                 cycling_type = 'indoor'
+
+            if strava_metadata is not None:
+                bike_name = _clean_string(strava_metadata['gear'])
+
+        metadata['cycling_type'] = cycling_type
+        metadata['bike_name'] = bike_name
 
 
         # ------------------------------------------------------------------------------------
@@ -291,6 +296,9 @@ class Activity(object):
         if device_model not in ['elemnt', 'fr220', 'edge520', 'fenix3']:
             print('Warning: unexpected device model %s' % device_model)
 
+        metadata['device_model'] = device_model
+        metadata['device_manufacturer'] = device_manufacturer
+
 
         # ------------------------------------------------------------------------------------
         #
@@ -314,13 +322,12 @@ class Activity(object):
             power_flag = 'bike_power' in device_types
             speed_flag = 'bike_speed' in device_types
 
-
-        flags = {'heart_rate': hrm_flag, 'power': power_flag, 'speed': speed_flag}
-        values = activity_type, cycling_type, device_manufacturer, device_model, flags, strava_metadata
-        attrs = 'activity_type', 'cycling_type', 'device_manufacturer', 'device_model', 'flags', 'strava'
-
-        for attr, value in zip(attrs, values):
-            metadata[attr] = value
+        metadata.update({
+            'heart_rate_flag': hrm_flag, 
+            'power_flag': power_flag, 
+            'speed_flag': speed_flag
+        })
+        
 
         return metadata
 
@@ -345,9 +352,9 @@ class Activity(object):
                 continue
 
             flag = sensor in self._fit_data['record'].columns
-            if self.metadata['flags'][sensor] and not flag:
+            if self.metadata['%s_flag' % sensor] and not flag:
                 print('Warning: activity %s has %s sensor but no records' % (activity_id, sensor))
-            if not self.metadata['flags'][sensor] and flag:
+            if not self.metadata['%s_flag' % sensor] and flag:
                 print('Warning: activity %s has %s records but no sensor' % (activity_id, sensor))
         
 
