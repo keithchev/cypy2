@@ -43,36 +43,35 @@ CREATE DATABASE :dbname
 SET search_path = public, pg_catalog;
 SET default_tablespace = '';
 
--- from Strava metadata
 CREATE TYPE ACTIVITY_TYPE AS ENUM ('ride', 'run', 'walk', 'hike');
-
--- 'indoor' from FIT file's sub_sport field; 'cross' must be manually labeled
 CREATE TYPE CYCLING_TYPE AS ENUM ('road', 'cross', 'indoor');
-
--- from Strava metadata
 CREATE TYPE BIKE_NAME AS ENUM ('giant-defy-advanced', 'lynskey-cx');
 
+CREATE TYPE DEVICE_MANUFACTURER AS ENUM ('garmin', 'wahoo');
 CREATE TYPE DEVICE_MODEL AS ENUM (
     'fenix3', 
-    'fr220'
+    'fr220',
     'edge520', 
-    'elemnt',  -- nb the typo is correct
+    'elemnt'  -- nb the typo is correct
 );
 
 
 CREATE TABLE metadata (
 
     activity_id char(14),
+    activity_type ACTIVITY_TYPE,
 
     filename varchar,
+    file_date timestamp,
     strava_title varchar,
     strava_date timestamp,
-    activity_type ACTIVITY_TYPE,
-    cycling_type CYCLING_TYPE,
-    bike_name BIKE_NAME,
 
-    -- these columns are inferred from the 'device_info' message
+    bike_name BIKE_NAME,
+    cycling_type CYCLING_TYPE,
+
     device_model DEVICE_MODEL,
+    device_manufacturer DEVICE_MANUFACTURER,
+
     power_meter_flag boolean,
     speed_sensor_flag boolean,
     heart_rate_monitor_flag boolean,
@@ -83,22 +82,82 @@ CREATE TABLE metadata (
 
 -- each row here is the 'session' message from one FIT file
 CREATE TABLE device_summary (
+
     activity_id char(14), 
+    start_time timestamp,
+
+    avg_cadence int,
+    max_cadence int,
+
+    avg_running_cadence int,  -- runs only
+    max_running_cadence int,  -- runs only
+
+    avg_heart_rate int,
+    max_heart_rate int,
+
+    avg_speed real,
+    max_speed real,
+    enhanced_avg_speed real,
+    enhanced_max_speed real,
+
+    -- rides with power only
+    avg_power int,
+    max_power int,
+    normalized_power int,
+    threshold_power int,
+    intensity_factor real,
+    training_stress_score real,
+    
+    total_ascent int,
+    total_descent int,
+    total_distance real,
+    total_elapsed_time real,
+    total_timer_time real,
+
+    total_work int,     -- ride w powe ronly
+    total_calories int, -- surprisingly, exists for all activities
+    total_strides int,  -- runs only
+
     PRIMARY KEY (activity_id),
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
 );
 
 
-CREATE TABLE pauses (
+CREATE TYPE EVENT_TYPE AS ENUM ('start', 'stop');
 
-    PRIMARY KEY (),
+CREATE TABLE events (
+    
+    activity_id char(14),
+    event_time timestamp,
+    event_type EVENT_TYPE,
+
+    PRIMARY KEY (event_time),
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
 );
 
 
 CREATE TABLE timepoints (
 
-    PRIMARY KEY (),
+    activity_id char(14), 
+
+    timepoint timestamp[],
+    position_lat int[],        -- semicircles
+    position_long int[],       -- semicircles
+    distance real[],           -- meters
+    altitude real[],           -- meters
+    enhanced_altitude real[],  -- meters
+    speed real[],              -- m/s
+    enhanced_speed real[],     -- m/s
+
+    cadence int[],            -- rpm
+    heart_rate int[],         -- bpm
+    power int[],              -- watts
+    temperature int[],        -- degrees C
+
+    gps_accuracy int[],        -- meters
+    grade real[],              -- percent
+
+    PRIMARY KEY (activity_id),
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
 );
 
