@@ -114,7 +114,7 @@ CREATE TABLE device_summary (
     total_elapsed_time real,
     total_timer_time real,
 
-    total_work int,     -- ride w powe ronly
+    total_work int,     -- ride w power only
     total_calories int, -- surprisingly, exists for all activities
     total_strides int,  -- runs only
 

@@ -105,12 +105,16 @@ class Activity(object):
     @classmethod
     def from_fit(cls, filepath):
         '''
-        Initialize directly from a FIT file
-
+        Initialize an activity directly from a FIT file
+    
         **intended for testing only**
-        note that fit_data will not have a 'strava_metadata' key
+        (note that there is no strava_metadata)
+        
+        Parameters
+        filepath : path to a local FIT file
 
         '''
+        
         data = file_utils.parse_fit(filepath)
         activity = cls(source='local', fit_data=data)
         return activity
@@ -119,15 +123,20 @@ class Activity(object):
     @classmethod
     def from_strava_export(cls, data):
         '''
-        Initialize from the parsed data cached by managers.StravaExportManager
+        Initialize an activity from the parsed data cached by managers.StravaExportManager
         
-        Usage: 
-            manager = StravaExportManager(root, from_cache=True)
-            activity = Activity.from_strava_export(data=manager.parsed_data[ind])
+        Parameters
+        ----------
+        data : dict of message dataframes; one element of the list returned by
+               StravaExportManager.parse_all
+
+        Usage
+        -----
+        manager = StravaExportManager(root, from_cache=True)
+        activity = Activity.from_strava_export(data=manager.parsed_data[ind])
 
         '''
-        metadata = data['strava_metadata']
-        activity = cls(source='local', fit_data=data, strava_metadata=metadata)
+        activity = cls(source='local', fit_data=data, strava_metadata=data['strava_metadata'])
         return activity
 
 
@@ -152,7 +161,7 @@ class Activity(object):
 
         '''
 
-        activity_id = self.metadata['activity_id']
+        activity_id = self.metadata.activity_id
 
         # ------------------------------------------------------------------------------------
         #
@@ -190,7 +199,6 @@ class Activity(object):
         #  summary
         #
         # ------------------------------------------------------------------------------------
-
         # device summary (i.e., the 'session' message)
         # summary = self.summary(summary_type='device')
 
@@ -201,7 +209,7 @@ class Activity(object):
         #
         # ------------------------------------------------------------------------------------
         # create new row in timepoints with activity_id
-        pgutils.insert_value(conn, 'timepoints', 'activity_id', activity_id)
+        pgutils.insert_value(conn, 'timepoints', 'activity_id', self.metadata.activity_id)
         conn.commit()
 
         columns = pgutils.get_column_names(conn, 'timepoints')
@@ -215,7 +223,7 @@ class Activity(object):
                     table='timepoints', 
                     column=column,
                     value=record[column], 
-                    selector=('activity_id', activity_id))
+                    selector=('activity_id', self.metadata.activity_id))
 
         conn.commit()
 
@@ -253,8 +261,7 @@ class Activity(object):
 
     def _generate_metadata(self):
         '''
-        Generate metadata from the raw data
-        For now, we assume the raw data is from a parsed FIT file
+        Generate metadata from the raw (FIT-file) data
 
         Columns:        
             - activity_id
@@ -266,6 +273,9 @@ class Activity(object):
             - HRM, power meter, and speed sensor flags
 
         '''
+
+        if self.source!='local':
+            raise ValueError('Cannot generate metadata when source is not local')
 
         # map from FIT-like activity types to strava-like activity types
         activity_type_map = {
@@ -412,7 +422,7 @@ class Activity(object):
             'speed_flag': speed_flag
         })
         
-
+        metadata = pd.Series(data=metadata)
         return metadata
 
 
@@ -425,7 +435,7 @@ class Activity(object):
         - 
         '''
 
-        activity_id = self.metadata['activity_id']
+        activity_id = self.metadata.activity_id
 
         # check that we have timeseries data for the expected sensors
         # (there is always speed data, with or without a sensor)
@@ -481,10 +491,23 @@ class Activity(object):
         # column names for database
         events = events.rename(columns={'timestamp': 'event_time'})
 
-        events['activity_id'] = self.metadata['activity_id']
+        events['activity_id'] = self.metadata.activity_id
 
         # 'stop_all' to 'stop', etc
         events.replace(to_replace=re.compile('stop(.*)$'), value='stop', inplace=True)
         events.replace(to_replace=re.compile('start(.*)$'), value='start', inplace=True)
+
+        # remove pairs of start/stop events that have the same timestamp
+        # (this is rare, but real)
+        if events.shape[0]!=len(events.event_time.unique()):
+            print('Warning: at least two events have the same timestamp')
+
+        # indices of the first event of each pair with the same timestamp
+        inds = np.argwhere(np.array([dt.astype(int) for dt in np.diff(events.event_time)])==0).flatten()
+        for ind in inds:
+            if set(events.iloc[ind:ind + 2].event_type)==set(['start', 'stop']):
+                events = events.drop([ind, ind + 1], axis=0)
+            else:
+                print('Warning: two events have the same timestamp *and* type')
 
         return events
