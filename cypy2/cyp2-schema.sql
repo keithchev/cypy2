@@ -149,13 +149,13 @@ CREATE TABLE timepoints (
     speed real[],              -- m/s
     enhanced_speed real[],     -- m/s
 
+    power int[],              -- watts
     cadence int[],            -- rpm
     heart_rate int[],         -- bpm
-    power int[],              -- watts
     temperature int[],        -- degrees C
 
-    gps_accuracy int[],        -- meters
     grade real[],              -- percent
+    gps_accuracy int[],        -- meters
 
     PRIMARY KEY (activity_id),
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)

@@ -6,11 +6,18 @@ import time
 import shutil
 import pickle
 import datetime
+import psycopg2
 import numpy as np
 import pandas as pd
 
 from . import file_utils
 from . import file_settings
+
+try:
+    import pgutils
+except ModuleNotFoundError:
+    sys.path.append('../../../_projects-gh/pgutils/')
+    import pgutils
 
 
 class Activity(object):
@@ -140,9 +147,77 @@ class Activity(object):
     def to_db(self, conn):
         '''
         Insert the activity's data into a cypy2 database
+        
+        conn : psycopg2 connection to the database
+
         '''
-        with conn.cursor() as cursor:
-            pass
+
+        activity_id = self.metadata['activity_id']
+
+        # ------------------------------------------------------------------------------------
+        #
+        #  metadata
+        #
+        # ------------------------------------------------------------------------------------
+        metadata_column_map = {
+            'power_flag': 'power_meter_flag', 
+            'speed_flag': 'speed_sensor_flag', 
+            'heart_rate_flag': 'heart_rate_monitor_flag'
+        }
+
+        # metadata as a (one-row) DataFrame so we can use pgutils.dataframe_to_table
+        # TODO: decide how to handle database errors
+        metadata = pd.DataFrame(data=[self.metadata]).rename(columns=metadata_column_map)
+        try:
+            pgutils.dataframe_to_table(conn, 'metadata', metadata, raise_errors=True)
+            conn.commit()
+        except psycopg2.Error as error:
+            print('Error inserting metadata: %s' % error)
+            return
+
+        # ------------------------------------------------------------------------------------
+        #
+        #  events
+        #
+        # ------------------------------------------------------------------------------------
+        events = self.events()
+        pgutils.dataframe_to_table(conn, 'events', events, raise_errors=False)
+        conn.commit()
+
+
+        # ------------------------------------------------------------------------------------
+        #
+        #  summary
+        #
+        # ------------------------------------------------------------------------------------
+
+        # device summary (i.e., the 'session' message)
+        # summary = self.summary(summary_type='device')
+
+
+        # ------------------------------------------------------------------------------------
+        #
+        #  records
+        #
+        # ------------------------------------------------------------------------------------
+        # create new row in timepoints with activity_id
+        pgutils.insert_value(conn, 'timepoints', 'activity_id', activity_id)
+        conn.commit()
+
+        columns = pgutils.get_column_names(conn, 'timepoints')
+        record = self._fit_data['record'].rename(columns={'timestamp': 'timepoint'})
+
+        # note that update_value will overwrite any existing values
+        for column in columns:
+            if column in record.columns:
+                pgutils.update_value(
+                    conn,
+                    table='timepoints', 
+                    column=column,
+                    value=record[column], 
+                    selector=('activity_id', activity_id))
+
+        conn.commit()
 
 
 
@@ -155,13 +230,13 @@ class Activity(object):
         Parameters
         ----------
         filepath : path to a FIT file
-        file_id : file_id message as a pandas dataframe or series
+        file_id : file_id message as a pandas DataFrame (with a single row) or Series
         
         '''
         if filepath is not None:
             fitfile = file_utils.open_fit(filepath)
-            file_id = next(fitfile.get_messages('file_id'))
-            file_id = pd.DataFrame([{f.name: f.value for f in file_id.fields}])
+            fields = {f.name: f.value for f in next(fitfile.get_messages('file_id')).fields}
+            file_id = pd.DataFrame([fields])
 
         if isinstance(file_id, pd.DataFrame):
             assert(file_id.shape[0]==1)
@@ -394,3 +469,22 @@ class Activity(object):
         Summary statistics
         '''
         pass
+
+
+    def events(self):
+
+        events = self._fit_data['event'].copy()
+
+        # for now, keep only the event_type and time columns for 'timer' events (starts and stops)
+        events = events.loc[events.event=='timer'][['event_type', 'timestamp']]
+
+        # column names for database
+        events = events.rename(columns={'timestamp': 'event_time'})
+
+        events['activity_id'] = self.metadata['activity_id']
+
+        # 'stop_all' to 'stop', etc
+        events.replace(to_replace=re.compile('stop(.*)$'), value='stop', inplace=True)
+        events.replace(to_replace=re.compile('start(.*)$'), value='start', inplace=True)
+
+        return events
