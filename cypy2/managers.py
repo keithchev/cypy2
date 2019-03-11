@@ -10,9 +10,8 @@ import numpy as np
 import pandas as pd
 from io import StringIO
 
-from . import file_utils
-from . import file_settings
-from . activity import Activity
+from cypy2 import (file_utils, file_settings)
+from cypy2.activity import (Activity, LocalActivity)
 
 
 
@@ -28,14 +27,13 @@ class ActivityManager(object):
     def from_strava_export(cls, strava_export_manager):
 
         activities = []
-        for ind, d in enumerate(strava_export_manager.parsed_data):
+        for ind, data in enumerate(strava_export_manager.parsed_data):
             try:
-                activity = Activity.from_strava_export(d)
+                activity = LocalActivity.from_strava_export(data)
             except:
                 print('Warning: error parsing data at index %s' % ind)
 
             activities.append(activity)
-
         return cls(activities)
 
 

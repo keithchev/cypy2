@@ -10,8 +10,7 @@ import psycopg2
 import numpy as np
 import pandas as pd
 
-from . import file_utils
-from . import file_settings
+from cypy2 import (file_utils, file_settings)
 
 try:
     import pgutils
@@ -20,142 +19,83 @@ except ModuleNotFoundError:
     import pgutils
 
 
+
 class Activity(object):
+    '''
+    Processing and database-related methods for a single activity
+    
+    Parameters
+    ----------
+    source : 'local' or 'db'
+    data : parsed data from either a single FIT file or a database query,
+           always as a dict of 'events', 'summary', 'records' dataframes
+    metadata : activity metadata as a pd.Series 
 
-    # message types required in raw FIT data
-    required_message_names = ['file_id', 'device_info', 'session', 'event', 'record']
+    Examples
+    --------
+    activity = Activity.from_db(conn, activity_id)
+
+    Public API
+    ----------
+    from_db
+    to_db
+    metadata
+    process
+
+    # summary statistics from the FIT file's 'session' message or derived by self.summarize
+    summary(dtype='raw|derived')
+    
+    # events (e.g. starts/stops) from the FIT file's event messages or derived from the records
+    events(dtype='raw|derived')
+
+    # time-series data from FIT file record messages
+    records(dtype='raw|derived')
 
 
-    def __init__(
-        self, 
-        source, 
-        db_data=None, 
-        fit_data=None, 
-        db_metadata=None,
-        strava_metadata=None, 
-        manual_metadata=None):
+    TODO: implement _validate_metadata    
+    TODO: decide on format/structure of db_data
+    TODO: decide on what the 'core' raw and processed data consists of
+    
+    '''
 
-        '''
-        Processing methods for a single activity
-        
-        Parameters
-        ----------
-        source : 'local' or 'db'
-        fit_data : the parsed data from a single FIT file
-                   as a dict of dataframes keyed by message name
-        db_data : raw data retrieved from a cypy2 database
-        strava_metadata : optional strava-related metadata
-        manual_metadata : optional manually-defined metadata (currently unused)
 
-        TODO: decide on format/structure of db_data
-
-        TODO: decide on what the 'core' raw and processed data consists of,
-        regardless of whether we start from raw FIT-file data or data from the database
-
-        Public API
-        ----------
-        # generated/organized metadata
-        self.metadata
-        
-        # summary statistics - either calculated or from the 'session' message     
-        self.summary(type='device|calculated')
-        
-        # pauses either inferred from the timeseries or derived from device event data
-        self.pauses(dtype='device|inferred')
-
-        # time-series data from FIT file record messages
-        self.timeseries(dtype='raw|processed')
-        
-        '''
-
-        if fit_data is None and db_data is None:
-            raise ValueError('Either fit_data or db_data must be provided')
+    def __init__(self, metadata, data, source='db'):
 
         assert(source in ['local', 'db'])
+
+        # self._validate_metadata(metadata)
+
+        required_dtypes = ['events', 'summary', 'records']
+        if set(required_dtypes).difference(data.keys()):
+            raise ValueError('Some data types are missing')
+
+        self._data = data
         self.source = source
-
-        # only one of db_data and raw_metadata should be not None
-        self._db_data = db_data
-        self._fit_data = fit_data
-
-        # only one 'type' of metadata here should be not None
-        self._db_metadata = db_metadata
-        self._strava_metadata = strava_metadata
-        self._manual_metadata = manual_metadata
-
-        # initialize from raw FIT-file data
-        if source=='local':
-
-            # generate/infer/organize metadata
-            self.metadata = self._generate_metadata()
-
-            # various consistency checks
-            self._validate_fit_data()
-
-            # organize the raw data by summary, pauses, and timeseries
-            self._parse_fit_data(fit_data)
-
-        # initialize from raw database data
-        # TODO: is there a need for data validation here?
-        # TODO: can we assume db_metadata is identical to self.metadata?
-        if source=='db':
-            self._load_db_data(db_metadata, db_data)
+        self.metadata = metadata
 
 
     @classmethod
-    def from_fit(cls, filepath):
-        '''
-        Initialize an activity directly from a FIT file
-    
-        **intended for testing only**
-        (note that there is no strava_metadata)
-        
-        Parameters
-        filepath : path to a local FIT file
-
-        '''
-        
-        data = file_utils.parse_fit(filepath)
-        activity = cls(source='local', fit_data=data)
-        return activity
-
-
-    @classmethod
-    def from_strava_export(cls, data):
-        '''
-        Initialize an activity from the parsed data cached by managers.StravaExportManager
-        
-        Parameters
-        ----------
-        data : dict of message dataframes; one element of the list returned by
-               StravaExportManager.parse_all
-
-        Usage
-        -----
-        manager = StravaExportManager(root, from_cache=True)
-        activity = Activity.from_strava_export(data=manager.parsed_data[ind])
-
-        '''
-        activity = cls(source='local', fit_data=data, strava_metadata=data['strava_metadata'])
-        return activity
-
-
-    @classmethod
-    def from_db(cls, conn, activity_id, load=None):
+    def from_db(cls, conn, activity_id, load='raw'):
         '''
         Initialize from the raw and maybe processed data from a cypy2 database
 
+        TODO: loading the metadata, events, summary, and records from the database
         TODO: decide whether the data can include previously-processed data
-        
-        load : 'raw', 'processed', or 'all'
+        TODO: implement load options ('raw', 'processed', or 'all')
         '''
-        activity = cls(source='db', db_data=data)
+
+        # metadata = pgutils.get_rows(...)
+        # data['events'] = ...
+        # data['timepoints']
+        # data['summary']
+
+        activity = cls(metadata, data, source='db')
         return activity
 
 
     def to_db(self, conn):
         '''
-        Insert the activity's data into a cypy2 database
+        Insert or update an activity's data in a cypy2 database
         
         conn : psycopg2 connection to the database
 
@@ -213,7 +153,7 @@ class Activity(object):
         conn.commit()
 
         columns = pgutils.get_column_names(conn, 'timepoints')
-        record = self._fit_data['record'].rename(columns={'timestamp': 'timepoint'})
+        record = self._data['record'].rename(columns={'timestamp': 'timepoint'})
 
         # note that update_value will overwrite any existing values
         for column in columns:
@@ -227,6 +167,132 @@ class Activity(object):
 
         conn.commit()
 
+
+
+
+    def data(self, dtype=None, columns=None):
+        '''
+        '''
+        assert(dtype in ['events', 'summary', 'records'])
+
+
+
+    def process(self):
+        '''
+        '''
+        pass
+
+
+
+    def summary(self, dtype='raw'):
+        '''
+        Summary statistics
+        '''
+        assert(dtype in ['raw', 'derived'])
+        pass
+
+
+
+    def events(self, dtype='raw'):
+        '''
+        '''
+
+        assert(dtype in ['raw', 'derived'])
+
+        if dtype=='raw':
+            return self._data['events']
+
+        if dtype=='derived':
+            return self._derive_events()
+
+
+
+
+class LocalActivity(Activity):
+    '''
+    An activity loaded from local (non-database) data
+    Subclasses Activity and contains FIT-file-specific parsing methods
+
+    Public methods
+    --------------
+    from_fit_file
+    from_strava_export
+
+    Examples
+    --------
+    # from a local FIT file
+    activity = LocalActivity.from_fit_file('/path/to/fit/file')
+
+    # from a strava export
+    manager = StravaExportManager('/path/to/export/', from_cache=True)
+    activity = LocalActivity.from_strava_export(data=manager.parsed_data[ind])
+
+
+    Parameters
+    ----------
+    fit_data : parsed data from a single FIT file as a dict of dataframes keyed by message name
+               must have: 'file_id', 'device_info', 'event', 'session', and 'record'
+
+    strava_metadata : one-row dataframe of metadata from a Strava export's activity.csv
+
+    '''
+
+    def __init__(self, fit_data, strava_metadata=None):
+
+        # message types required in raw FIT data
+        required_message_names = ['file_id', 'device_info', 'session', 'event', 'record']
+        if set(required_message_names).difference(fit_data.keys()):
+            raise ValueError('Some message types are missing in fit_data')
+
+        # generate/infer/organize metadata
+        metadata = self._generate_metadata(fit_data, strava_metadata)
+
+        # various consistency checks
+        self._validate_fit_data(metadata, fit_data)
+
+        # parse/organize the raw data 
+        events, summary, records = self._parse_fit_data(metadata, fit_data)
+
+        data = {
+            'events': events,
+            'summary': summary,
+            'records': records,
+        }
+
+        super().__init__(metadata, data, source='local')
+
+
+
+    @classmethod
+    def from_fit_file(cls, filepath):
+        '''
+        Initialize an activity directly from a FIT file
+    
+        **intended for testing only**
+        (note that there is no strava_metadata)
+        
+        Parameters
+        filepath : path to a local FIT file
+
+        '''
+        
+        data = file_utils.parse_fit(filepath)
+        activity = cls(data)
+        return activity
+
+
+    @classmethod
+    def from_strava_export(cls, data):
+        '''
+        Initialize an activity from the parsed data cached by managers.StravaExportManager
+        
+        Parameters
+        ----------
+        data : dict of message dataframes; usually, this corresponds to one element 
+        of the list returned by StravaExportManager.parse_all
+        '''
+        activity = cls(data, strava_metadata=data['strava_metadata'])
+        return activity
 
 
     @staticmethod
@@ -259,23 +325,21 @@ class Activity(object):
         return activity_id
 
 
-    def _generate_metadata(self):
+    @classmethod
+    def _generate_metadata(cls, fit_data, strava_metadata=None):
         '''
         Generate metadata from the raw (FIT-file) data
 
-        Columns:        
-            - activity_id
+        Metadata columns:        
+            - activity id
             - activity type
             - cycling type (indoor/road)
             - FIT file timestamp
             - strava timestamp, title, gear
-            - GPS device make/model
+            - GPS device make and model
             - HRM, power meter, and speed sensor flags
 
         '''
-
-        if self.source!='local':
-            raise ValueError('Cannot generate metadata when source is not local')
 
         # map from FIT-like activity types to strava-like activity types
         activity_type_map = {
@@ -296,9 +360,8 @@ class Activity(object):
 
 
         # message types we need (we can assume all exist, except for 'sport')
-        d = self._fit_data
         file_id, device_info, session, sport = \
-            d.get('file_id'), d.get('device_info'), d.get('session'), d.get('sport')
+            fit_data.get('file_id'), fit_data.get('device_info'), fit_data.get('session'), fit_data.get('sport')
 
         # column renaming in device_info
         device_info.rename(columns={'garmin_product': 'product_name'}, inplace=True)
@@ -312,7 +375,7 @@ class Activity(object):
         file_id, session = _df_to_series(file_id), _df_to_series(session)
 
         # strava metadata as a series for convenience (it always has one row by definition)
-        strava_metadata = _df_to_series(self._strava_metadata)
+        strava_metadata = _df_to_series(strava_metadata)
 
         # ------------------------------------------------------------------------------------
         #
@@ -320,7 +383,7 @@ class Activity(object):
         #
         # ------------------------------------------------------------------------------------
         metadata = {
-            'activity_id': self.id_from_fit(file_id=file_id),
+            'activity_id': cls.id_from_fit(file_id=file_id),
             'file_date': str(file_id.time_created),
         }
 
@@ -426,64 +489,43 @@ class Activity(object):
         return metadata
 
 
-
-    def _validate_fit_data(self):
+    @staticmethod
+    def _validate_fit_data(metadata, fit_data):
         '''
         Check the integrity of raw (FIT-file) data
         
-        - check that 'core' message types are present
+        TODO: check that required message types exist
         - 
         '''
 
-        activity_id = self.metadata.activity_id
+        activity_id = metadata.activity_id
 
-        # check that we have timeseries data for the expected sensors
-        # (there is always speed data, with or without a sensor)
+        # check that we have records for the expected sensors
+        # (nb there is always speed data, with or without a sensor)
         for sensor in ['heart_rate', 'power']:
 
             # skip fenix3 because it has a built-in HRM
-            if sensor=='heart_rate' and self.metadata['device_model']=='fenix3':
+            if sensor=='heart_rate' and metadata['device_model']=='fenix3':
                 continue
 
-            flag = sensor in self._fit_data['record'].columns
-            if self.metadata['%s_flag' % sensor] and not flag:
+            flag = sensor in fit_data['record'].columns
+            if metadata['%s_flag' % sensor] and not flag:
                 print('Warning: activity %s has %s sensor but no records' % (activity_id, sensor))
-            if not self.metadata['%s_flag' % sensor] and flag:
+            if not metadata['%s_flag' % sensor] and flag:
                 print('Warning: activity %s has %s records but no sensor' % (activity_id, sensor))
         
 
-
-    def _parse_fit_data(self, fit_data):
+    @staticmethod
+    def _parse_fit_data(metadata, fit_data):
         '''
-        Parse/organize raw data when self.source=='local'
+        Parse/cleanup/organize 'event' and 'record' data
+
+        TODO: parse/cleanup summary and records
 
         '''
-        pass
-
-
-    def data(self, dtype=None, columns=None):
-        '''
-        '''
-        pass
-
-
-    def process(self):
-        '''
-        '''
-        pass
-
-
-
-    def summary(self):
-        '''
-        Summary statistics
-        '''
-        pass
-
-
-    def events(self):
-
-        events = self._fit_data['event'].copy()
+        events = fit_data['event'].copy()
+        summary = fit_data['session'].copy()
+        records = fit_data['record'].copy()
 
         # for now, keep only the event_type and time columns for 'timer' events (starts and stops)
         events = events.loc[events.event=='timer'][['event_type', 'timestamp']]
@@ -491,7 +533,7 @@ class Activity(object):
         # column names for database
         events = events.rename(columns={'timestamp': 'event_time'})
 
-        events['activity_id'] = self.metadata.activity_id
+        events['activity_id'] = metadata.activity_id
 
         # 'stop_all' to 'stop', etc
         events.replace(to_replace=re.compile('stop(.*)$'), value='stop', inplace=True)
@@ -510,4 +552,4 @@ class Activity(object):
             else:
                 print('Warning: two events have the same timestamp *and* type')
 
-        return events
+        return events, summary, records
