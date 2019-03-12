@@ -93,85 +93,6 @@ class Activity(object):
         return activity
 
 
-    def raw_to_db(self, conn):
-        '''
-        Insert or update an activity's *raw* data in a cypy2 database
-
-        Generally, this method should only be called when populating a new database,
-        since the raw data should never need to be updated. 
-        
-        conn : psycopg2 connection to the database
-
-        '''
-
-        activity_id = self.metadata.activity_id
-
-        # ------------------------------------------------------------------------------------
-        #
-        #  metadata
-        #
-        # ------------------------------------------------------------------------------------
-        metadata_column_map = {
-            'power_flag': 'power_meter_flag', 
-            'speed_flag': 'speed_sensor_flag', 
-            'heart_rate_flag': 'heart_rate_monitor_flag'
-        }
-
-        # metadata as a (one-row) DataFrame so we can use pgutils.dataframe_to_table
-        # TODO: decide how to handle database errors
-        metadata = pd.DataFrame(data=[self.metadata]).rename(columns=metadata_column_map)
-        try:
-            pgutils.dataframe_to_table(conn, 'metadata', metadata, raise_errors=True)
-            conn.commit()
-        except psycopg2.Error as error:
-            print('Error inserting metadata: %s' % error)
-            return
-
-
-        # ------------------------------------------------------------------------------------
-        #
-        #  events
-        #
-        # ------------------------------------------------------------------------------------
-        events = self.events()
-        pgutils.dataframe_to_table(conn, 'raw_events', events, raise_errors=False)
-        conn.commit()
-
-
-        # ------------------------------------------------------------------------------------
-        #
-        #  summary
-        #
-        # ------------------------------------------------------------------------------------
-        # device summary (i.e., the 'session' message)
-        # summary = self.summary(summary_type='device')
-
-
-        # ------------------------------------------------------------------------------------
-        #
-        #  records
-        #
-        # ------------------------------------------------------------------------------------
-        # create a new row in raw_records for this activity
-        pgutils.insert_value(conn, 'raw_records', 'activity_id', self.metadata.activity_id)
-        conn.commit()
-
-        columns = pgutils.get_column_names(conn, 'raw_records')
-        record = self._data['record'].rename(columns={'timestamp': 'timepoint'})
-
-        # note that update_value will overwrite any existing values
-        for column in columns:
-            if column in record.columns:
-                pgutils.update_value(
-                    conn,
-                    table='raw_records', 
-                    column=column,
-                    value=record[column], 
-                    selector=('activity_id', self.metadata.activity_id))
-
-        conn.commit()
-
-
 
 
     def data(self, dtype=None, columns=None):
@@ -305,6 +226,87 @@ class LocalActivity(Activity):
         '''
         activity = cls(data, strava_metadata=data['strava_metadata'])
         return activity
+
+
+
+    def to_db(self, conn):
+        '''
+        Insert or update an activity's *raw* data in a cypy2 database
+
+        Generally, this method should only be called when populating a new database,
+        since the raw data should never need to be updated. 
+        
+        conn : psycopg2 connection to the database
+
+        '''
+
+        activity_id = self.metadata.activity_id
+
+        # ------------------------------------------------------------------------------------
+        #
+        #  metadata
+        #
+        # ------------------------------------------------------------------------------------
+        metadata_column_map = {
+            'power_flag': 'power_meter_flag', 
+            'speed_flag': 'speed_sensor_flag', 
+            'heart_rate_flag': 'heart_rate_monitor_flag'
+        }
+
+        # metadata as a (one-row) DataFrame so we can use pgutils.dataframe_to_table
+        # TODO: decide how to handle database errors
+        metadata = pd.DataFrame(data=[self.metadata]).rename(columns=metadata_column_map)
+        try:
+            pgutils.dataframe_to_table(conn, 'metadata', metadata, raise_errors=True)
+            conn.commit()
+        except psycopg2.Error as error:
+            print('Error inserting metadata: %s' % error)
+            return
+
+
+        # ------------------------------------------------------------------------------------
+        #
+        #  events
+        #
+        # ------------------------------------------------------------------------------------
+        events = self.events(dtype='raw')
+        pgutils.dataframe_to_table(conn, 'raw_events', events, raise_errors=False)
+        conn.commit()
+
+
+        # ------------------------------------------------------------------------------------
+        #
+        #  summary
+        #
+        # ------------------------------------------------------------------------------------
+        # device summary (i.e., the 'session' message)
+        # summary = self.summary(dtype='raw')
+
+
+        # ------------------------------------------------------------------------------------
+        #
+        #  records
+        #
+        # ------------------------------------------------------------------------------------
+        # create a new row in raw_records for this activity
+        pgutils.insert_value(conn, 'raw_records', 'activity_id', self.metadata.activity_id)
+        conn.commit()
+
+        records = self.records(dtype='raw')
+        records.rename(columns={'timestamp': 'timepoint'}, inplace=True)
+
+        # note that update_value will overwrite any existing values
+        columns = pgutils.get_column_names(conn, 'raw_records')
+        for column in columns:
+            if column in record.columns:
+                pgutils.update_value(
+                    conn,
+                    table='raw_records', 
+                    column=column,
+                    value=record[column], 
+                    selector=('activity_id', self.metadata.activity_id))
+
+        conn.commit()
 
 
     @staticmethod
