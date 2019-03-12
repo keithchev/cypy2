@@ -13,6 +13,11 @@ from io import StringIO
 from cypy2 import (file_utils, file_settings)
 from cypy2.activity import (Activity, LocalActivity)
 
+try:
+    import pgutils
+except ModuleNotFoundError:
+    sys.path.append('../../../_projects-gh/pgutils/')
+    import pgutils
 
 
 class ActivityManager(object):
@@ -30,8 +35,8 @@ class ActivityManager(object):
         for ind, data in enumerate(strava_export_manager.parsed_data):
             try:
                 activity = LocalActivity.from_strava_export(data)
-            except:
-                print('Warning: error parsing data at index %s' % ind)
+            except Exception as error:
+                print('Warning: error parsing data at index %s:\n%s' % (ind, error))
 
             activities.append(activity)
         return cls(activities)
@@ -42,15 +47,20 @@ class ActivityManager(object):
         '''
         load all activities from a cypy2 database
         
-        something like this:
-
-        activity_ids = get_all_activity_ids(conn)
-        for activity_id in activity_ids:
-            activity = Activity.from_db(conn, activity_id)
-        
         '''
-        pass
 
+        # all activity_ids in the database
+        activity_ids = pgutils.get_rows(conn, 'metadata', column='activity_id').values.flatten()
+
+        activities = []
+        for activity_id in activity_ids:
+            try:
+                activity = Activity.from_db(conn, activity_id)
+            except Exception as error:
+                print('Error loading activity_id %s:\n%s' % (activity_id, error))
+
+            activities.append(activity)
+        return cls(activities)
 
 
     def activities(self, activity_id=None, **kwargs):
@@ -81,8 +91,6 @@ class ActivityManager(object):
                 metadata = metadata.loc[metadata[key]==val]
 
         return metadata
-
-
 
 
 
@@ -137,7 +145,7 @@ class StravaExportManager(object):
         self.parse_errors : list of metadata rows on which file_utils.parse_fit failed
 
         '''
-        data = []
+        parsed_data = []
         errors = []
         for ind, row in self.metadata.iterrows():    
             sys.stdout.write('\r%s: %s' % (row.date, row.filename))
@@ -146,16 +154,19 @@ class StravaExportManager(object):
                 continue
 
             try:
-                d = file_utils.parse_fit(os.path.join(self.root_dirpath, row.filename))
-            except:
-                errors.append(row)
+                data = file_utils.parse_fit(os.path.join(self.root_dirpath, row.filename))
+            except Exception as error:
+                errors.append([row, error])
                 continue
-            
-            # use a dataframe here for consistency with message dataframes
-            d['strava_metadata'] = pd.DataFrame([row])
-            data.append(d)
 
-        self.parsed_data = data
+            # use a dataframe here for consistency with message dataframes
+            data['strava_metadata'] = pd.DataFrame([row])
+            parsed_data.append(data)
+
+        if len(errors):
+            print('Warning: some errors occured; inspect parsing_errors for details')
+
+        self.parsed_data = parsed_data
         self.parsing_errors = errors
 
 

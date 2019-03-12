@@ -79,16 +79,25 @@ class Activity(object):
         '''
         Initialize from the raw and maybe processed data from a cypy2 database
 
-        TODO: loading the metadata, events, summary, and records from the database
-        TODO: decide whether the data can include previously-processed data
-        TODO: implement load options ('raw', 'processed', or 'all')
+        TODO: implement load='all' (raw plus derived data)
         '''
 
-        # metadata = pgutils.get_rows(...)
-        # data['events'] = ...
-        # data['timepoints']
-        # data['summary']
+        selector = ('activity_id', activity_id)
 
+        metadata = pgutils.get_rows(conn, 'metadata', selector)
+        events = pgutils.get_rows(conn, 'raw_events', selector)
+        records = pgutils.get_rows(conn, 'raw_records', selector)
+
+        # records from a one-row dataframe of lists to a dataframe of timepoints
+        records = pd.DataFrame(records.to_dict(orient='records').pop())
+
+        # for now, skip loading the raw summary
+        summary = None
+
+        # metadata as a pd.Series
+        metadata = metadata.iloc[0]
+
+        data = {'events': events, 'records': records, 'summary': summary}
         activity = cls(metadata, data, source='db')
         return activity
 
@@ -298,12 +307,12 @@ class LocalActivity(Activity):
         # note that update_value will overwrite any existing values
         columns = pgutils.get_column_names(conn, 'raw_records')
         for column in columns:
-            if column in record.columns:
+            if column in records.columns:
                 pgutils.update_value(
                     conn,
                     table='raw_records', 
                     column=column,
-                    value=record[column], 
+                    value=records[column], 
                     selector=('activity_id', self.metadata.activity_id))
 
         conn.commit()
