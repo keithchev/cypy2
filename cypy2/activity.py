@@ -19,7 +19,6 @@ except ModuleNotFoundError:
     import pgutils
 
 
-
 class Activity(object):
     '''
     Processing and database-related methods for a single activity
@@ -28,7 +27,7 @@ class Activity(object):
     ----------
     source : 'local' or 'db'
     data : parsed data from either a single FIT file or a database query,
-           always as a dict of 'events', 'summary', 'records' dataframes
+           always as a dict of 'events', 'summary', and 'records' dataframes
     metadata : activity metadata as a pd.Series 
 
     Examples
@@ -65,8 +64,9 @@ class Activity(object):
 
         # self._validate_metadata(metadata)
 
-        required_dtypes = ['events', 'summary', 'records']
-        if set(required_dtypes).difference(data.keys()):
+        # check that expected types of raw data are present
+        required_raw_data = ['events', 'summary', 'records']
+        if set(required_raw_data).difference(data.keys()):
             raise ValueError('Some data types are missing')
 
         self._data = data
@@ -93,9 +93,12 @@ class Activity(object):
         return activity
 
 
-    def to_db(self, conn):
+    def raw_to_db(self, conn):
         '''
-        Insert or update an activity's data in a cypy2 database
+        Insert or update an activity's *raw* data in a cypy2 database
+
+        Generally, this method should only be called when populating a new database,
+        since the raw data should never need to be updated. 
         
         conn : psycopg2 connection to the database
 
@@ -124,13 +127,14 @@ class Activity(object):
             print('Error inserting metadata: %s' % error)
             return
 
+
         # ------------------------------------------------------------------------------------
         #
         #  events
         #
         # ------------------------------------------------------------------------------------
         events = self.events()
-        pgutils.dataframe_to_table(conn, 'events', events, raise_errors=False)
+        pgutils.dataframe_to_table(conn, 'raw_events', events, raise_errors=False)
         conn.commit()
 
 
@@ -148,11 +152,11 @@ class Activity(object):
         #  records
         #
         # ------------------------------------------------------------------------------------
-        # create new row in timepoints with activity_id
-        pgutils.insert_value(conn, 'timepoints', 'activity_id', self.metadata.activity_id)
+        # create a new row in raw_records for this activity
+        pgutils.insert_value(conn, 'raw_records', 'activity_id', self.metadata.activity_id)
         conn.commit()
 
-        columns = pgutils.get_column_names(conn, 'timepoints')
+        columns = pgutils.get_column_names(conn, 'raw_records')
         record = self._data['record'].rename(columns={'timestamp': 'timepoint'})
 
         # note that update_value will overwrite any existing values
@@ -160,7 +164,7 @@ class Activity(object):
             if column in record.columns:
                 pgutils.update_value(
                     conn,
-                    table='timepoints', 
+                    table='raw_records', 
                     column=column,
                     value=record[column], 
                     selector=('activity_id', self.metadata.activity_id))
@@ -206,6 +210,14 @@ class Activity(object):
             return self._derive_events()
 
 
+    def records(self, dtype='raw'):
+
+        if dtype=='raw':
+            return self._data['records']
+
+        if dtype=='derived':
+            return self._derive_records()
+
 
 
 class LocalActivity(Activity):
@@ -223,7 +235,7 @@ class LocalActivity(Activity):
     # from a local FIT file
     activity = LocalActivity.from_fit_file('/path/to/fit/file')
 
-    # from a strava export
+    # from a Strava export manager
     manager = StravaExportManager('/path/to/export/', from_cache=True)
     activity = LocalActivity.from_strava_export(data=manager.parsed_data[ind])
 
@@ -233,7 +245,7 @@ class LocalActivity(Activity):
     fit_data : parsed data from a single FIT file as a dict of dataframes keyed by message name
                must have: 'file_id', 'device_info', 'event', 'session', and 'record'
 
-    strava_metadata : one-row dataframe of metadata from a Strava export's activity.csv
+    strava_metadata : optional one-row dataframe of metadata from a Strava export's activity.csv
 
     '''
 

@@ -52,7 +52,7 @@ CREATE TYPE DEVICE_MODEL AS ENUM (
     'fenix3', 
     'fr220',
     'edge520', 
-    'elemnt'  -- nb the typo is correct
+    'elemnt'  -- nb the typo is correct -_-
 );
 
 
@@ -80,8 +80,8 @@ CREATE TABLE metadata (
 );
 
 
--- each row here is the 'session' message from one FIT file
-CREATE TABLE device_summary (
+-- column names here are mostly copied from the 'session' message type
+CREATE TABLE raw_summary (
 
     activity_id char(14), 
     start_time timestamp,
@@ -123,20 +123,21 @@ CREATE TABLE device_summary (
 );
 
 
-CREATE TYPE EVENT_TYPE AS ENUM ('start', 'stop');
+CREATE TYPE RAW_EVENT_TYPE AS ENUM ('start', 'stop');
 
-CREATE TABLE events (
+CREATE TABLE raw_events (
     
     activity_id char(14),
+    event_type RAW_EVENT_TYPE,
     event_time timestamp,
-    event_type EVENT_TYPE,
 
     PRIMARY KEY (event_time),
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
 );
 
 
-CREATE TABLE timepoints (
+
+CREATE TABLE raw_records (
 
     activity_id char(14), 
 
@@ -144,6 +145,7 @@ CREATE TABLE timepoints (
     position_lat int[],        -- semicircles
     position_long int[],       -- semicircles
     distance real[],           -- meters
+
     altitude real[],           -- meters
     enhanced_altitude real[],  -- meters
     speed real[],              -- m/s
@@ -161,6 +163,33 @@ CREATE TABLE timepoints (
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
 );
 
+
+CREATE TABLE proc_records (
+
+    activity_id char(14), 
+    commit_hash char(40),      -- cypy2 commit that created the row
+    date_created timestamp,    -- date the row was created
+
+    timepoint timestamp[],
+    lat int[],              -- semicircles
+    lon int[],              -- semicircles
+
+    distance real[],        -- meters
+    altitude real[],        -- meters
+    grade real[],           -- percent
+    speed real[],           -- m/s
+    vam real[],             -- m/h
+
+    power int[],           -- watts
+    cadence int[],         -- rpm
+    heart_rate int[],      -- bpm
+
+    pause_mask boolean[],  -- true when paused, false when not
+    climb_mask boolean[],  -- true when climbing, false when not (rides only)
+
+    PRIMARY KEY (activity_id, date_created),
+    FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
+);
 
 
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
