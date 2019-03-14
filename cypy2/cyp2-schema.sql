@@ -1,15 +1,11 @@
 --
 -- Running/cycling activity database
-
-
--- Tables
--- ------
 --
-
+--
 -- Usage
 -- -----
 -- psql -f cypy-schema.sql -v dbname="dbname"
-
+--
 -- Keith Cheveralls
 -- Feb 2019
 --
@@ -58,7 +54,7 @@ CREATE TYPE DEVICE_MODEL AS ENUM (
 
 CREATE TABLE metadata (
 
-    activity_id char(14),
+    activity_id char(14) PRIMARY KEY,
     activity_type ACTIVITY_TYPE,
 
     filename varchar,
@@ -66,24 +62,22 @@ CREATE TABLE metadata (
     strava_title varchar,
     strava_date timestamp,
 
-    bike_name BIKE_NAME,
     cycling_type CYCLING_TYPE,
+    bike_name BIKE_NAME,
 
     device_model DEVICE_MODEL,
     device_manufacturer DEVICE_MANUFACTURER,
 
     power_meter_flag boolean,
     speed_sensor_flag boolean,
-    heart_rate_monitor_flag boolean,
-    
-    PRIMARY KEY (activity_id)
+    heart_rate_monitor_flag boolean
 );
 
 
 -- column names here are mostly copied from the 'session' message type
 CREATE TABLE raw_summary (
 
-    activity_id char(14), 
+    activity_id char(14) PRIMARY KEY,
     start_time timestamp,
 
     avg_cadence int,
@@ -114,11 +108,10 @@ CREATE TABLE raw_summary (
     total_elapsed_time real,
     total_timer_time real,
 
-    total_work int,     -- ride w power only
+    total_work int,     -- ride with power only
     total_calories int, -- surprisingly, exists for all activities
     total_strides int,  -- runs only
 
-    PRIMARY KEY (activity_id),
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
 );
 
@@ -126,12 +119,11 @@ CREATE TABLE raw_summary (
 CREATE TYPE RAW_EVENT_TYPE AS ENUM ('start', 'stop');
 
 CREATE TABLE raw_events (
-    
-    activity_id char(14),
-    event_type RAW_EVENT_TYPE,
-    event_time timestamp,
 
-    PRIMARY KEY (event_time),
+    event_time timestamp PRIMARY KEY,
+    event_type RAW_EVENT_TYPE,
+    activity_id char(14),
+
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
 );
 
@@ -139,7 +131,7 @@ CREATE TABLE raw_events (
 
 CREATE TABLE raw_records (
 
-    activity_id char(14), 
+    activity_id char(14) PRIMARY KEY, 
 
     timepoint timestamp[],
     position_lat int[],        -- semicircles
@@ -159,7 +151,6 @@ CREATE TABLE raw_records (
     grade real[],              -- percent
     gps_accuracy int[],        -- meters
 
-    PRIMARY KEY (activity_id),
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
 );
 
@@ -167,12 +158,17 @@ CREATE TABLE raw_records (
 CREATE TABLE proc_records (
 
     activity_id char(14), 
-    commit_hash char(40),      -- cypy2 commit that created the row
-    date_created timestamp,    -- date the row was created
 
+    date_created timestamptz  DEFAULT now(),
+    date_modified timestamptz DEFAULT NULL,
+
+    -- cypy2 commit that created/updated the row  
+    commit_hash char(40)      NOT NULL,
+
+    -- arrays of time-series data
     timepoint timestamp[],
-    lat int[],              -- semicircles
-    lon int[],              -- semicircles
+    lat int[],                -- semicircles
+    lon int[],                -- semicircles
 
     distance real[],        -- meters
     altitude real[],        -- meters
@@ -190,6 +186,18 @@ CREATE TABLE proc_records (
     PRIMARY KEY (activity_id, date_created),
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
 );
+
+
+CREATE FUNCTION update_date_modified() RETURNS trigger AS $$
+BEGIN
+    NEW.date_modified = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- note that 'EXECUTE FUNCTION' here doesn't work
+CREATE TRIGGER proc_records_date_modified BEFORE UPDATE ON proc_records
+FOR EACH ROW EXECUTE PROCEDURE update_date_modified();
 
 
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
