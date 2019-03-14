@@ -88,7 +88,7 @@ class Activity(object):
         TODO: implement load='all' (raw plus derived data)
         '''
 
-        selector = ('activity_id', activity_id)
+        selector = {'activity_id': activity_id}
 
         metadata = pgutils.get_rows(conn, 'metadata', selector)
         events = pgutils.get_rows(conn, 'raw_events', selector)
@@ -304,7 +304,7 @@ class LocalActivity(Activity):
         #
         # ------------------------------------------------------------------------------------
         # create a new row in raw_records for this activity
-        pgutils.insert_value(conn, 'raw_records', 'activity_id', self.metadata.activity_id)
+        pgutils.insert_value(conn, 'raw_records', 'activity_id', activity_id)
         conn.commit()
 
         records = self.records(dtype='raw')
@@ -319,7 +319,7 @@ class LocalActivity(Activity):
                     table='raw_records', 
                     column=column,
                     value=records[column], 
-                    selector=('activity_id', self.metadata.activity_id))
+                    selector={'activity_id': activity_id})
 
         conn.commit()
 
