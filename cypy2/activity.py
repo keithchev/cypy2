@@ -7,6 +7,7 @@ import shutil
 import pickle
 import datetime
 import psycopg2
+import subprocess
 import numpy as np
 import pandas as pd
 
@@ -97,6 +98,13 @@ class Activity(object):
         # records from a one-row dataframe of lists to a dataframe of timepoints
         records = pd.DataFrame(records.to_dict(orient='records').pop())
 
+        # drop activity_id columns
+        events.drop('activity_id', axis=1, inplace=True)
+        records.drop('activity_id', axis=1, inplace=True)
+
+        # drop record fields with no data
+        records.dropna(axis=1, how='all', inplace=True)
+
         # for now, skip loading the raw summary
         summary = None
 
@@ -107,6 +115,50 @@ class Activity(object):
         activity = cls(metadata, data, source='db')
         return activity
 
+
+
+    def to_db(self, conn):
+        '''
+        Insert an activity's *processed* (that is, derived) records
+
+        Currently, this method always creates a new row in proc_records
+        with the latest processed records data, even if the data is unchanged
+        (since the table is keyed by (activity_id, date_created)). 
+
+        conn : psycopg2 connection to the database
+
+        '''
+
+        table = 'proc_records'
+        activity_id = self.metadata.activity_id
+
+        # hack-ish way to get the current commit
+        git_log = subprocess.run('git log', shell=True, stdout=subprocess.PIPE, universal_newlines=True)
+        commit_hash = git_log.stdout.split(' ')[1].split('\n')[0]
+
+        # create a new row in the proc_records table
+        pgutils.insert_value(conn, table, {'activity_id': activity_id, 'commit_hash': commit_hash})
+        conn.commit()
+
+        # get the value of date_created in the new row
+        d = pd.read_sql('select activity_id, date_created from proc_records', conn)
+        date_created = d.sort_values(by='date_created', ascending=False).iloc[0].date_created
+
+        records = self.records(dtype='derived')
+        records.rename(columns={'timestamp': 'timepoint'}, inplace=True)
+
+        # update the data columns
+        columns = pgutils.get_column_names(conn, table)
+        for column in columns:
+            if column in records.columns:
+                pgutils.update_value(
+                    conn,
+                    table=table, 
+                    column=column,
+                    value=records[column], 
+                    selector={'activity_id': activity_id, 'date_created': date_created})
+
+        conn.commit()
 
 
 
@@ -152,7 +204,10 @@ class Activity(object):
             return self._data['records']
 
         if dtype=='derived':
-            return self._derive_records()
+            # return self._derive_records()
+            # just for testing:
+            data = self._data['records'].iloc[:5]
+            return data
 
 
 
@@ -304,7 +359,7 @@ class LocalActivity(Activity):
         #
         # ------------------------------------------------------------------------------------
         # create a new row in raw_records for this activity
-        pgutils.insert_value(conn, 'raw_records', 'activity_id', activity_id)
+        pgutils.insert_value(conn, 'raw_records', {'activity_id': activity_id})
         conn.commit()
 
         records = self.records(dtype='raw')
