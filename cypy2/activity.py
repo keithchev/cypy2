@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import git
 import glob
 import time
 import shutil
@@ -117,9 +118,9 @@ class Activity(object):
 
 
 
-    def to_db(self, conn):
+    def to_db(self, conn, verbose=True):
         '''
-        Insert an activity's *processed* (that is, derived) records
+        Insert an activity's *processed* (that is, derived) data
 
         Currently, this method always creates a new row in proc_records
         with the latest processed records data, even if the data is unchanged
@@ -132,12 +133,16 @@ class Activity(object):
         table = 'proc_records'
         activity_id = self.metadata.activity_id
 
-        # hack-ish way to get the current commit
-        git_log = subprocess.run('git log', shell=True, stdout=subprocess.PIPE, universal_newlines=True)
-        commit_hash = git_log.stdout.split(' ')[1].split('\n')[0]
+        # the current commit
+        repo = git.Repo('../')
+        current_commit = repo.commit().hexsha
+
+        # warn if there are uncommited changes in activity.py
+        if verbose and 'cypy2/activity.py' in [d.a_path for d in repo.index.diff(None)]:
+            print('Warning in Activity.to_db: uncommitted local changes in cypy2/activity.py')
 
         # create a new row in the proc_records table
-        pgutils.insert_value(conn, table, {'activity_id': activity_id, 'commit_hash': commit_hash})
+        pgutils.insert_value(conn, table, {'activity_id': activity_id, 'commit_hash': current_commit})
         conn.commit()
 
         # get the value of date_created in the new row
