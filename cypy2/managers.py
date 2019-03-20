@@ -94,7 +94,6 @@ class ActivityManager(object):
 
 
 
-
 class StravaExportManager(object):
 
     def __init__(self, root_dirpath, from_cache=False):

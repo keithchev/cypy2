@@ -120,7 +120,25 @@ class Activity(object):
 
 
 
-    def to_db(self, conn, verbose=True):
+    def to_db(self, conn, kind=None, verbose=True):
+
+        assert(kind in ['raw', 'processed'])
+
+        sys.stdout.write('\rInserting %s data for activity %s' % \
+            (kind, self.metadata.activity_id))
+
+        if kind=='raw':
+            if self.source=='local':
+                self._raw_to_db(conn, verbose)
+            else:
+                raise ValueError(
+                    'Cannot insert raw data unless the activity was loaded from a local file')
+
+        if kind=='processed':
+            self._proc_to_db(conn, verbose)
+
+
+    def _proc_to_db(self, conn, verbose):
         '''
         Insert an activity's *processed* (that is, derived) data
 
@@ -257,7 +275,6 @@ class Activity(object):
     def events(self, dtype='raw'):
         '''
         '''
-
         assert(dtype in ['raw', 'derived'])
 
         if dtype=='raw':
@@ -365,7 +382,7 @@ class LocalActivity(Activity):
 
 
 
-    def to_db(self, conn):
+    def _raw_to_db(self, conn, verbose):
         '''
         Insert or update an activity's *raw* data in a cypy2 database
 

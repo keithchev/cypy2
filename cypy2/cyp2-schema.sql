@@ -73,13 +73,12 @@ CREATE TYPE DEVICE_MODEL AS ENUM (
 
 
 CREATE TABLE metadata (
-
     activity_id           char(14) PRIMARY KEY,
     activity_type         ACTIVITY_TYPE,
     filename              varchar,
     file_date             timestamp,
-    strava_title          varchar,
     strava_date           timestamp,
+    strava_title          varchar,
 
     bike_name             BIKE_NAME,
     cycling_type          CYCLING_TYPE,
@@ -95,7 +94,6 @@ CREATE TABLE metadata (
 
 -- column names here are mostly copied from the 'session' message type
 CREATE TABLE raw_summary (
-
     activity_id             char(14) PRIMARY KEY,
     start_time              timestamp,
 
@@ -132,38 +130,34 @@ CREATE TABLE raw_summary (
 );
 
 
-CREATE TYPE RAW_EVENT_TYPE AS ENUM ('start', 'stop');
+CREATE TYPE RAW_EVENT_TYPE AS ENUM (
+    'start', 
+    'stop'
+);
 
 CREATE TABLE raw_events (
-
     activity_id    char(14),
     event_type     RAW_EVENT_TYPE,
     event_time     timestamp PRIMARY KEY,
-
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
 );
 
 
 
 CREATE TABLE raw_records (
-
     activity_id         char(14) PRIMARY KEY, 
     timepoint           timestamp[],
-
     position_lat        int[],   -- semicircles
     position_long       int[],   -- semicircles
     distance            real[],  -- meters
     altitude            real[],  -- meters
     speed               real[],  -- m/s
-
     enhanced_speed      real[],  -- m/s
     enhanced_altitude   real[],  -- meters
-
     power               int[],   -- watts
     cadence             int[],   -- rpm
     heart_rate          int[],   -- bpm
     temperature         int[],   -- degrees C
-
     grade               real[],  -- percent
     gps_accuracy        int[],   -- meters
 
@@ -172,23 +166,19 @@ CREATE TABLE raw_records (
 
 
 CREATE TABLE proc_records (
-
     activity_id     char(14), 
     date_created    timestamptz DEFAULT now(),
     date_modified   timestamptz DEFAULT NULL,
- 
     commit_hash     char(40) NOT NULL, -- git commit when the row was created 
 
     elapsed_time    int[],
     lat             real[],   -- decimal degrees 
     lon             real[],   -- decimal degrees
-
     distance        real[],   -- meters
     altitude        real[],   -- meters
     grade           real[],   -- percent
     speed           real[],   -- m/s
     vam             real[],   -- m/h
-
     power           int[],    -- watts
     cadence         int[],    -- rpm
     heart_rate      int[],    -- bpm
