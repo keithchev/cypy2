@@ -255,11 +255,11 @@ class LocalActivity(Activity):
         # generate/infer/organize metadata
         metadata = self._generate_metadata(fit_data, strava_metadata)
 
-        # various consistency checks
-        self._validate_fit_data(metadata, fit_data)
-
         # parse/organize the raw data 
-        events, summary, records = self._parse_fit_data(metadata, fit_data)
+        events, summary, records = self._parse_fit_data(fit_data, metadata.activity_id)
+
+        # various consistency checks
+        self._validate_fit_data(metadata, records, events)
 
         data = {
             'events': events,
@@ -322,15 +322,10 @@ class LocalActivity(Activity):
         #  metadata
         #
         # ------------------------------------------------------------------------------------
-        metadata_column_map = {
-            'power_flag': 'power_meter_flag', 
-            'speed_flag': 'speed_sensor_flag', 
-            'heart_rate_flag': 'heart_rate_monitor_flag'
-        }
 
         # metadata as a (one-row) DataFrame so we can use pgutils.dataframe_to_table
         # TODO: decide how to handle database errors
-        metadata = pd.DataFrame(data=[self.metadata]).rename(columns=metadata_column_map)
+        metadata = pd.DataFrame(data=[self.metadata])
         try:
             pgutils.dataframe_to_table(conn, 'metadata', metadata, raise_errors=True)
             conn.commit()
@@ -368,7 +363,6 @@ class LocalActivity(Activity):
         conn.commit()
 
         records = self.records(dtype='raw')
-        records.rename(columns={'timestamp': 'timepoint'}, inplace=True)
 
         # note that update_value will overwrite any existing values
         columns = pgutils.get_column_names(conn, 'raw_records')
@@ -579,7 +573,7 @@ class LocalActivity(Activity):
 
 
     @staticmethod
-    def _validate_fit_data(metadata, fit_data):
+    def _validate_fit_data(metadata, records, events):
         '''
         Check the integrity of raw (FIT-file) data
         
@@ -597,7 +591,7 @@ class LocalActivity(Activity):
             if sensor=='heart_rate' and metadata['device_model']=='fenix3':
                 continue
 
-            flag = sensor in fit_data['record'].columns
+            flag = sensor in records.columns
             if metadata['%s_flag' % sensor] and not flag:
                 print('Warning: activity %s has %s sensor but no records' % (activity_id, sensor))
             if not metadata['%s_flag' % sensor] and flag:
@@ -605,9 +599,9 @@ class LocalActivity(Activity):
         
 
     @staticmethod
-    def _parse_fit_data(metadata, fit_data):
+    def _parse_fit_data(fit_data, activity_id):
         '''
-        Parse/cleanup/organize 'event' and 'record' data
+        Parse/cleanup/organize 'event', 'summary', and 'record' data
 
         TODO: parse/cleanup summary and records
 
@@ -622,7 +616,7 @@ class LocalActivity(Activity):
         # column names for database
         events = events.rename(columns={'timestamp': 'event_time'})
 
-        events['activity_id'] = metadata.activity_id
+        events['activity_id'] = activity_id
 
         # 'stop_all' to 'stop', etc
         events.replace(to_replace=re.compile('stop(.*)$'), value='stop', inplace=True)
@@ -640,5 +634,8 @@ class LocalActivity(Activity):
                 events = events.drop([ind, ind + 1], axis=0)
             else:
                 print('Warning: two events have the same timestamp *and* type')
+
+        # column renaming
+        records.rename(columns={'timestamp': 'timepoint'}, inplace=True)
 
         return events, summary, records

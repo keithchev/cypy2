@@ -68,9 +68,10 @@ CREATE TABLE metadata (
     device_model DEVICE_MODEL,
     device_manufacturer DEVICE_MANUFACTURER,
 
-    power_meter_flag boolean,
-    speed_sensor_flag boolean,
-    heart_rate_monitor_flag boolean
+    -- flags for the presence of a power meter, speed sensor, or HRM
+    power_flag boolean,
+    speed_flag boolean,
+    heart_rate_flag boolean
 );
 
 
