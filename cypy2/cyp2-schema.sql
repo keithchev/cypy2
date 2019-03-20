@@ -144,10 +144,10 @@ CREATE TABLE raw_records (
     speed real[],              -- m/s
     enhanced_speed real[],     -- m/s
 
-    power int[],              -- watts
-    cadence int[],            -- rpm
-    heart_rate int[],         -- bpm
-    temperature int[],        -- degrees C
+    power int[],               -- watts
+    cadence int[],             -- rpm
+    heart_rate int[],          -- bpm
+    temperature int[],         -- degrees C
 
     grade real[],              -- percent
     gps_accuracy int[],        -- meters
@@ -163,13 +163,13 @@ CREATE TABLE proc_records (
     date_created timestamptz  DEFAULT now(),
     date_modified timestamptz DEFAULT NULL,
 
-    -- cypy2 commit that created/updated the row  
+    -- cypy2 commit that created the row  
     commit_hash char(40)      NOT NULL,
 
-    -- arrays of time-series data
-    timepoint timestamp[],
-    lat int[],                -- semicircles
-    lon int[],                -- semicircles
+    -- elapsed time in seconds
+    elapsed_time int[],
+    lat real[],                -- decimal degrees 
+    lon real[],                -- decimal degrees
 
     distance real[],        -- meters
     altitude real[],        -- meters
