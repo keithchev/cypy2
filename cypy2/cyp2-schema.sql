@@ -15,10 +15,12 @@
 ---------------------------------------------------------------------------------------------------
 --
 -- disallow new connections
-UPDATE pg_database SET datallowconn = 'false' WHERE datname = :'dbname';
+UPDATE pg_database SET datallowconn = 'false' 
+WHERE datname = :'dbname';
 
 -- force drop any existing connections
-SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = :'dbname';
+SELECT pg_terminate_backend(pid) FROM pg_stat_activity 
+WHERE datname = :'dbname';
 
 -- drop the database
 DROP DATABASE IF EXISTS :dbname;
@@ -39,79 +41,92 @@ CREATE DATABASE :dbname
 SET search_path = public, pg_catalog;
 SET default_tablespace = '';
 
-CREATE TYPE ACTIVITY_TYPE AS ENUM ('ride', 'run', 'walk', 'hike');
-CREATE TYPE CYCLING_TYPE AS ENUM ('road', 'cross', 'indoor');
-CREATE TYPE BIKE_NAME AS ENUM ('giant-defy-advanced', 'lynskey-cx');
+CREATE TYPE ACTIVITY_TYPE AS ENUM (
+    'ride', 
+    'run', 
+    'walk', 
+    'hike'
+);
 
-CREATE TYPE DEVICE_MANUFACTURER AS ENUM ('garmin', 'wahoo');
+CREATE TYPE CYCLING_TYPE AS ENUM (
+    'road', 
+    'cross', 
+    'indoor'
+);
+
+CREATE TYPE BIKE_NAME AS ENUM (
+    'giant-defy-advanced', 
+    'lynskey-cx'
+);
+
+CREATE TYPE DEVICE_MANUFACTURER AS ENUM (
+    'garmin', 
+    'wahoo'
+);
+
 CREATE TYPE DEVICE_MODEL AS ENUM (
-    'fenix3', 
     'fr220',
+    'fenix3', 
     'edge520', 
-    'elemnt'  -- nb the typo is correct -_-
+    'elemnt'  -- the typo is correct
 );
 
 
 CREATE TABLE metadata (
 
-    activity_id char(14) PRIMARY KEY,
-    activity_type ACTIVITY_TYPE,
+    activity_id           char(14) PRIMARY KEY,
+    activity_type         ACTIVITY_TYPE,
+    filename              varchar,
+    file_date             timestamp,
+    strava_title          varchar,
+    strava_date           timestamp,
 
-    filename varchar,
-    file_date timestamp,
-    strava_title varchar,
-    strava_date timestamp,
+    bike_name             BIKE_NAME,
+    cycling_type          CYCLING_TYPE,
+    device_model          DEVICE_MODEL,
+    device_manufacturer   DEVICE_MANUFACTURER,
 
-    cycling_type CYCLING_TYPE,
-    bike_name BIKE_NAME,
-
-    device_model DEVICE_MODEL,
-    device_manufacturer DEVICE_MANUFACTURER,
-
-    -- flags for the presence of a power meter, speed sensor, or HRM
-    power_flag boolean,
-    speed_flag boolean,
-    heart_rate_flag boolean
+    -- flags for the presence of a power meter, speed sensor, and HRM
+    power_flag            boolean,
+    speed_flag            boolean,
+    heart_rate_flag       boolean
 );
 
 
 -- column names here are mostly copied from the 'session' message type
 CREATE TABLE raw_summary (
 
-    activity_id char(14) PRIMARY KEY,
-    start_time timestamp,
+    activity_id             char(14) PRIMARY KEY,
+    start_time              timestamp,
 
-    avg_cadence int,
-    max_cadence int,
+    avg_speed               real,
+    max_speed               real,
+    enhanced_avg_speed      real,
+    enhanced_max_speed      real,
 
-    avg_running_cadence int,  -- runs only
-    max_running_cadence int,  -- runs only
+    avg_heart_rate          int,
+    max_heart_rate          int,
+    avg_cadence             int,
+    max_cadence             int,
+    avg_running_cadence     int,   -- runs only
+    max_running_cadence     int,   -- runs only
 
-    avg_heart_rate int,
-    max_heart_rate int,
-
-    avg_speed real,
-    max_speed real,
-    enhanced_avg_speed real,
-    enhanced_max_speed real,
-
-    -- rides with power only
-    avg_power int,
-    max_power int,
-    normalized_power int,
-    threshold_power int,
-    intensity_factor real,
-    training_stress_score real,
+    avg_power               int,   -- rides with power only
+    max_power               int,   -- ""
+    threshold_power         int,   -- ""
+    normalized_power        int,   -- ""
+    intensity_factor        real,  -- ""
+    training_stress_score   real,  -- ""
     
-    total_ascent int,
-    total_descent int,
-    total_distance real,
-    total_elapsed_time real,
-    total_timer_time real,
+    total_ascent            int,
+    total_descent           int,
+    total_distance          real,
+    total_timer_time        real,
+    total_elapsed_time      real,
 
-    total_work int,     -- ride with power only
-    total_calories int, -- surprisingly, exists for all activities
-    total_strides int,  -- runs only
+    total_work              int,  -- ride with power only
+    total_strides           int,  -- runs only
+    total_calories          int,  -- exists for all activities
 
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
 );
@@ -121,9 +136,9 @@ CREATE TYPE RAW_EVENT_TYPE AS ENUM ('start', 'stop');
 
 CREATE TABLE raw_events (
 
-    event_time timestamp PRIMARY KEY,
-    event_type RAW_EVENT_TYPE,
-    activity_id char(14),
+    activity_id    char(14),
+    event_type     RAW_EVENT_TYPE,
+    event_time     timestamp PRIMARY KEY,
 
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
 );
@@ -132,25 +147,25 @@ CREATE TABLE raw_events (
 
 CREATE TABLE raw_records (
 
-    activity_id char(14) PRIMARY KEY, 
+    activity_id         char(14) PRIMARY KEY, 
+    timepoint           timestamp[],
 
-    timepoint timestamp[],
-    position_lat int[],        -- semicircles
-    position_long int[],       -- semicircles
-    distance real[],           -- meters
+    position_lat        int[],   -- semicircles
+    position_long       int[],   -- semicircles
+    distance            real[],  -- meters
+    altitude            real[],  -- meters
+    speed               real[],  -- m/s
 
-    altitude real[],           -- meters
-    enhanced_altitude real[],  -- meters
-    speed real[],              -- m/s
-    enhanced_speed real[],     -- m/s
+    enhanced_speed      real[],  -- m/s
+    enhanced_altitude   real[],  -- meters
 
-    power int[],               -- watts
-    cadence int[],             -- rpm
-    heart_rate int[],          -- bpm
-    temperature int[],         -- degrees C
+    power               int[],   -- watts
+    cadence             int[],   -- rpm
+    heart_rate          int[],   -- bpm
+    temperature         int[],   -- degrees C
 
-    grade real[],              -- percent
-    gps_accuracy int[],        -- meters
+    grade               real[],  -- percent
+    gps_accuracy        int[],   -- meters
 
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
 );
@@ -158,38 +173,36 @@ CREATE TABLE raw_records (
 
 CREATE TABLE proc_records (
 
-    activity_id char(14), 
+    activity_id     char(14), 
+    date_created    timestamptz DEFAULT now(),
+    date_modified   timestamptz DEFAULT NULL,
+ 
+    commit_hash     char(40) NOT NULL, -- git commit when the row was created 
 
-    date_created timestamptz  DEFAULT now(),
-    date_modified timestamptz DEFAULT NULL,
+    elapsed_time    int[],
+    lat             real[],   -- decimal degrees 
+    lon             real[],   -- decimal degrees
 
-    -- cypy2 commit that created the row  
-    commit_hash char(40)      NOT NULL,
+    distance        real[],   -- meters
+    altitude        real[],   -- meters
+    grade           real[],   -- percent
+    speed           real[],   -- m/s
+    vam             real[],   -- m/h
 
-    -- elapsed time in seconds
-    elapsed_time int[],
-    lat real[],                -- decimal degrees 
-    lon real[],                -- decimal degrees
+    power           int[],    -- watts
+    cadence         int[],    -- rpm
+    heart_rate      int[],    -- bpm
 
-    distance real[],        -- meters
-    altitude real[],        -- meters
-    grade real[],           -- percent
-    speed real[],           -- m/s
-    vam real[],             -- m/h
-
-    power int[],           -- watts
-    cadence int[],         -- rpm
-    heart_rate int[],      -- bpm
-
-    pause_mask boolean[],  -- true when paused, false when not
-    climb_mask boolean[],  -- true when climbing, false when not (rides only)
+    pause_mask      boolean[], 
+    climb_mask      boolean[],
 
     PRIMARY KEY (activity_id, date_created),
     FOREIGN KEY (activity_id) REFERENCES metadata (activity_id)
 );
 
 
-CREATE FUNCTION update_date_modified() RETURNS trigger AS $$
+CREATE FUNCTION update_date_modified() 
+RETURNS trigger AS $$
 BEGIN
     NEW.date_modified = now();
     RETURN NEW;
@@ -197,7 +210,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- note that 'EXECUTE FUNCTION' here doesn't work
-CREATE TRIGGER proc_records_date_modified BEFORE UPDATE ON proc_records
+CREATE TRIGGER proc_records_date_modified 
+BEFORE UPDATE ON proc_records
 FOR EACH ROW EXECUTE PROCEDURE update_date_modified();
 
 
