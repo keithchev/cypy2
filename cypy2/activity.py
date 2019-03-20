@@ -121,7 +121,15 @@ class Activity(object):
 
 
     def to_db(self, conn, kind=None, verbose=True):
+        '''
+        Insert an activity's raw or processed data into a database
 
+        Parameters
+        ----------
+        conn : a psycopg2 connection to the database
+        kind : the kind of data to insert; either 'raw' or 'processed'
+
+        '''
         assert(kind in ['raw', 'processed'])
 
         sys.stdout.write('\rInserting %s data for activity %s' % \
@@ -157,7 +165,7 @@ class Activity(object):
         repo = git.Repo('../')
         current_commit = repo.commit().hexsha
 
-        # warn if there are uncommited changes in activity.py
+        # warn if there are uncommitted changes in activity.py
         if verbose and 'cypy2/activity.py' in [d.a_path for d in repo.index.diff(None)]:
             print('Warning in Activity.to_db: uncommitted local changes in cypy2/activity.py')
 
@@ -165,13 +173,16 @@ class Activity(object):
         pgutils.insert_value(conn, table, {'activity_id': activity_id, 'commit_hash': current_commit})
         conn.commit()
 
-        # get the value of date_created in the new row
-        d = pd.read_sql('select activity_id, date_created from proc_records', conn)
-        date_created = d.sort_values(by='date_created', ascending=False).iloc[0].date_created
+        # get the new row (assumes we're the only user currently inserting rows)
+        row = pd.read_sql(
+            'select activity_id, date_created from proc_records order by date_created desc limit 1', conn)
+        row = row.iloc[0]
 
-        records = self.records(dtype='processed')
+        # sanity check
+        assert(row.activity_id==activity_id)
 
         # update the data columns
+        records = self.records(dtype='processed')
         columns = pgutils.get_column_names(conn, table)
         for column in columns:
             if column in records.columns:
@@ -180,7 +191,7 @@ class Activity(object):
                     table=table, 
                     column=column,
                     value=records[column], 
-                    selector={'activity_id': activity_id, 'date_created': date_created})
+                    selector={'activity_id': activity_id, 'date_created': row.date_created})
 
         conn.commit()
 
