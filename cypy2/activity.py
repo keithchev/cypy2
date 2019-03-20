@@ -190,12 +190,19 @@ class Activity(object):
         # column renaming
         records.rename(columns={'position_lat': 'lat', 'position_long': 'lon'}, inplace=True)
 
-        # these columns seem to be identical to 'speed' and 'altitude'
-        records.drop(['enhanced_speed', 'enhanced_altitude'], axis=1, inplace=True)
+        # drop the 'enhanced' speed and altitude columns, 
+        # since they seem to be identical to the 'normal' speed and altitude columns
+        # TODO: determine whether this is really true
+        dropped_columns = ['enhanced_speed', 'enhanced_altitude']
+        for column in dropped_columns:
+            if column in records.columns:
+                records.drop([column], axis=1, inplace=True)
 
-        # semicircles to degrees
-        records['lat'] *= constants.semicircles_to_degrees
-        records['lon'] *= constants.semicircles_to_degrees
+        # semicircles to degrees 
+        # (note that indoor rides won't have these columns)
+        if 'lat' in records.columns:
+            records['lat'] *= constants.semicircles_to_degrees
+            records['lon'] *= constants.semicircles_to_degrees
 
         # interpolate
         records = self._interpolate_records(records, constants.interpolation_timestep)
