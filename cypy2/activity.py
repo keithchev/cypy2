@@ -11,8 +11,10 @@ import psycopg2
 import subprocess
 import numpy as np
 import pandas as pd
+import seaborn as sns
 
 from scipy import interpolate
+from matplotlib import pyplot as plt
 
 from cypy2 import (file_utils, file_settings, constants)
 
@@ -219,6 +221,20 @@ class Activity(object):
 
         records = self.records('raw')
 
+        # -------------------------------------------------------------------------------
+        #
+        # temporary hack to correct fitparse bug
+        #
+        speed = records.speed.values
+        speed[speed > 30] /= 1000
+        records['speed'] = speed
+
+        alt = records.altitude.values
+        records['altitude'] = (alt - 2500)/5.
+        #
+        # ------------------------------------------------------------------------------- 
+
+
         # column renaming for convenience
         records.rename(columns={'position_lat': 'lat', 'position_long': 'lon'}, inplace=True)
 
@@ -241,6 +257,17 @@ class Activity(object):
 
         # derive additional columns (VAM, grade, vert, kJ, etc)
         records = self._derive_records(records)
+
+        # unit conversions
+        # speed to mph
+        records['speed'] *= (constants.miles_per_meter * constants.seconds_per_hour)
+
+        # altitude to feet
+        records['altitude'] *= constants.feet_per_meter
+
+        # distance to miles
+        records['distance'] *= constants.miles_per_meter
+
 
         return records
 
@@ -311,14 +338,49 @@ class Activity(object):
 
 
 
-    def plot(self, columns=None):
+    def plot(self, columns=None, overlay=False, xmode='time', xrange=None):
 
-        records = self.records('processed')
-        
-        fig, axs = plt.subplots((len(columns), 1))
-        for column, ax in zip(columns, axs):
-            ax.plot(records.elapsed_time, records[column])
+        colors = sns.color_palette()
+
+        xlabels = {'time': 'Elapsed time (hours)', 'distance': 'Distance (miles)'}
+
+        def _style_axis(ax):
+            ax.yaxis.grid(b=False)
+            ax.xaxis.grid(linestyle='dotted', color=tuple(np.ones(3)*.7))
     
+        records = self.records('processed')
+        if xmode=='time':
+            x = records.elapsed_time.values/3600
+        if xmode=='distance':
+            x = records.distance.values
+
+        if xrange:
+            mask = (x > min(xrange)) & (x < max(xrange))
+        else:
+            mask = np.ones(x.shape).astype(bool)
+
+        if isinstance(columns, str):
+            columns = [columns]
+        
+        if overlay:
+            fig, left_ax = plt.subplots(1, 1, figsize=(12, 2))
+            right_ax = left_ax.twinx()
+            axs = [left_ax, right_ax]
+        else:
+            fig, axs = plt.subplots(len(columns), 1, figsize=(12, 2*len(columns)))
+            if not isinstance(axs, np.ndarray):
+                axs = [axs]
+        
+        for column, ax, color in zip(columns, axs, colors[:len(axs)]):
+            y = records[column].values
+            ax.plot(x[mask], y[mask], color=color, label=column)
+            ax.set_ylabel(column)
+
+        for ind, ax in enumerate(axs):
+            _style_axis(ax)
+            if ind < len(axs) - 1:
+                ax.get_xaxis().set_ticklabels([])
+        axs[-1].set_xlabel(xlabels[xmode])
 
 
 class LocalActivity(Activity):
