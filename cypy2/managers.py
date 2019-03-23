@@ -63,12 +63,15 @@ class ActivityManager(object):
         return cls(activities)
 
 
-    def activities(self, activity_id=None, **kwargs):
+    def activities(self, activity_id=None, func=None, **kwargs):
         '''
         Filter activities
         '''
 
         _activities = self._activities
+        if func:
+            _activities = [a for a in _activities if func(a)]
+    
         if activity_id:
             _activities = [a for a in _activities if a.metadata['activity_id'].startswith(activity_id)]
 

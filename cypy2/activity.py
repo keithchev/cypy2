@@ -303,7 +303,10 @@ class Activity(object):
         **assumes records have been interpolated with a constant timestep**
         '''
 
-        records['vam'] = np.concatenate(([0], np.diff(records.altitude))) * constants.seconds_per_hour
+        vam = np.concatenate(([0], np.diff(records.altitude))) * constants.seconds_per_hour
+        vam[vam < 0] = 0
+        records['vam'] = vam
+
         return records
 
 
@@ -338,7 +341,7 @@ class Activity(object):
 
 
 
-    def plot(self, columns=None, overlay=False, xmode='time', xrange=None):
+    def plot(self, columns=None, overlay=False, xmode='time', xrange=None, window_size=None):
 
         colors = sns.color_palette()
 
@@ -373,6 +376,9 @@ class Activity(object):
         
         for column, ax, color in zip(columns, axs, colors[:len(axs)]):
             y = records[column].values
+            if window_size:
+                y = np.convolve(y, np.ones(window_size)/window_size, mode='same')
+
             ax.plot(x[mask], y[mask], color=color, label=column)
             ax.set_ylabel(column)
 
