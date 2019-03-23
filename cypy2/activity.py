@@ -768,7 +768,8 @@ class LocalActivity(Activity):
     @staticmethod
     def _parse_fit_data(fit_data, activity_id):
         '''
-        Parse/cleanup/organize 'event', 'summary', and 'record' data
+        Parse the raw FIT-file data to generate database-ready
+        'events', 'summary', and 'record' dataframes
 
         TODO: parse/cleanup summary and records
 
@@ -776,6 +777,9 @@ class LocalActivity(Activity):
         events = fit_data['event'].copy()
         summary = fit_data['session'].copy()
         records = fit_data['record'].copy()
+
+        # column renaming
+        records.rename(columns={'timestamp': 'timepoint'}, inplace=True)
 
         # for now, keep only the event_type and time columns for 'timer' events (starts and stops)
         events = events.loc[events.event=='timer'][['event_type', 'timestamp']]
@@ -789,20 +793,25 @@ class LocalActivity(Activity):
         events.replace(to_replace=re.compile('stop(.*)$'), value='stop', inplace=True)
         events.replace(to_replace=re.compile('start(.*)$'), value='start', inplace=True)
 
-        # remove pairs of start/stop events that have the same timestamp
+        # check for pairs of start/stop events that have the same timestamp
         # (this is rare, but real)
         if events.shape[0]!=len(events.event_time.unique()):
             print('Warning: at least two events have the same timestamp')
 
-        # indices of the first event of each pair with the same timestamp
+        # remove any such pairs by finding the index of the first event of each pair
+        events = events.reset_index(drop=True)
         inds = np.argwhere(np.array([dt.astype(int) for dt in np.diff(events.event_time)])==0).flatten()
         for ind in inds:
-            if set(events.iloc[ind:ind + 2].event_type)==set(['start', 'stop']):
+            if set(events.iloc[[ind, ind + 1]].event_type)==set(['start', 'stop']):
                 events = events.drop([ind, ind + 1], axis=0)
             else:
+                # we should never get here
                 print('Warning: two events have the same timestamp *and* type')
 
-        # column renaming
-        records.rename(columns={'timestamp': 'timepoint'}, inplace=True)
+        # drop the last event when the last two events are both stops
+        # (this usually corresponds to a 'stop' and a 'stop_all')
+        events = events.reset_index(drop=True)
+        if events.iloc[-1].event_type=='stop' and events.iloc[-2].event_type=='stop':
+            events = events.drop(len(events) - 1, axis=0)
 
         return events, summary, records
