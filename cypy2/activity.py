@@ -16,7 +16,7 @@ import seaborn as sns
 from scipy import interpolate
 from matplotlib import pyplot as plt
 
-from cypy2 import (file_utils, file_settings, constants)
+from cypy2 import (utils, constants, file_utils, file_settings, constants)
 
 try:
     import pgutils
@@ -217,9 +217,11 @@ class Activity(object):
          - convert lat/lon from semicircles to decimal degrees
          - calculate VAM from altitude
 
+        TODO: calculate additional columns (grade, vert, kJ)
+
         '''
 
-        records = self.records('raw')
+        records = self.records('raw').reset_index()
 
         # -------------------------------------------------------------------------------
         #
@@ -254,11 +256,12 @@ class Activity(object):
 
         # interpolate
         records = self._interpolate_records(records, constants.interpolation_timestep)
+        
+        records.index = records.elapsed_time
+        
+        # calculate VAM (this is slow)
+        records['vam'] = self._calculate_vam(records.altitude)
 
-        # derive additional columns (VAM, grade, vert, kJ, etc)
-        records = self._derive_records(records)
-
-        # unit conversions
         # speed to mph
         records['speed'] *= (constants.miles_per_meter * constants.seconds_per_hour)
 
@@ -296,18 +299,50 @@ class Activity(object):
 
 
     @staticmethod
-    def _derive_records(records):
+    def _calculate_vam(altitude):
         '''
-        Calculate VAM and moving averages
+        Calculate VAM (vertical ascent velocity in meters per hour)
 
         **assumes records have been interpolated with a constant timestep**
+
+        Parameters
+        ----------
+        altitude : pd.Series of raw altitude values (in meters)
+                   ** must be interpolated to constant one-second timestep **
+
         '''
 
-        vam = np.concatenate(([0], np.diff(records.altitude))) * constants.seconds_per_hour
-        vam[vam < 0] = 0
-        records['vam'] = vam
+        assert set(np.diff(altitude.index.values))==set([1])
 
-        return records
+        # hard-coded half life in seconds
+        # (half life of 7s corresponds to a decay rate of 10s)
+        halflife = 7
+        window_sz = 3*halflife
+        alpha = (1 - np.exp(np.log(.5)/halflife))
+
+        weights = (1 - alpha)**(np.arange(0, window_sz, 1))
+        weights /= weights.sum()
+        weights = weights[::-1]
+
+        y = altitude.values
+        x_window = np.arange(window_sz)
+        y_windows = utils.sliding_window(y, window_sz, 1)
+
+        slopes, resids = [], []
+        for y_window in y_windows:
+            slope, offset, res = utils.weighted_linregress(x_window, y_window, weights)
+            slopes.append(slope)
+            resids.append(res)
+
+        vam, resids = np.array(slopes), np.array(resids)
+
+        # add back the missing initial values
+        vam = np.concatenate(([np.nan] * (window_sz - 1), vam))
+
+        # meters per sec to meters per hour
+        vam *= constants.seconds_per_hour
+
+        return vam
 
 
     def summary(self, kind='raw'):
@@ -387,6 +422,7 @@ class Activity(object):
             if ind < len(axs) - 1:
                 ax.get_xaxis().set_ticklabels([])
         axs[-1].set_xlabel(xlabels[xmode])
+
 
 
 class LocalActivity(Activity):
