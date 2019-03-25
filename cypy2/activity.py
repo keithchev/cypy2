@@ -341,7 +341,7 @@ class Activity(object):
 
 
 
-    def plot(self, columns=None, overlay=False, xmode='time', xrange=None, window_size=None):
+    def plot(self, columns=None, overlay=False, xmode='time', xrange=None, halflife=None):
 
         colors = sns.color_palette()
 
@@ -375,9 +375,9 @@ class Activity(object):
                 axs = [axs]
         
         for column, ax, color in zip(columns, axs, colors[:len(axs)]):
-            y = records[column].values
-            if window_size:
-                y = np.convolve(y, np.ones(window_size)/window_size, mode='same')
+            y = records[column]
+            if halflife:
+                y = y.ewm(halflife=halflife).mean()
 
             ax.plot(x[mask], y[mask], color=color, label=column)
             ax.set_ylabel(column)
