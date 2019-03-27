@@ -209,12 +209,13 @@ class Activity(object):
         '''
         Generate processed records from raw records
         
-        Does a few things:
-         - rename columns
-         - calculate elapsed time in seconds from the timestamps
-         - interpolate to ensure a constant sampling rate
-         - convert lat/lon from semicircles to decimal degrees
-         - calculate VAM from altitude
+        Does the following:
+         - renames/drops some columns
+         - calculates elapsed time in seconds
+         - interpolates the raw records to a constant sampling rate
+         - generates a pause mask
+         - calculates VAM from altitude
+         - various unit conversions
 
         TODO: calculate additional columns (grade, vert, kJ)
 
@@ -222,7 +223,7 @@ class Activity(object):
 
         records = self.records('raw').reset_index()
 
-        # -------------------------------------------------------------------------------
+        # ----------------------------------------------------------------------------------------
         #
         # temporary hack to correct fitparse bug
         #
@@ -235,7 +236,7 @@ class Activity(object):
             alt = records.altitude.values
             records['altitude'] = (alt - 2500)/5.
         #
-        # ------------------------------------------------------------------------------- 
+        # ---------------------------------------------------------------------------------------- 
 
         # column renaming for convenience
         records.rename(columns={'position_lat': 'lat', 'position_long': 'lon'}, inplace=True)
@@ -249,40 +250,49 @@ class Activity(object):
                 records.drop([column], axis=1, inplace=True)
 
 
+        # ----------------------------------------------------------------------------------------
+        #
+        # calculate elapsed time in seconds and drop the timepoint column
+        #
+        # ----------------------------------------------------------------------------------------
+        timestamps = records.timepoint.apply(pd.to_datetime)
+        records['elapsed_time'] = [dt.seconds for dt in (timestamps - timestamps[0])]
+        records.drop(['timepoint'], axis=1, inplace=True)
+
+
+        # ----------------------------------------------------------------------------------------
+        #
+        # interpolate the raw records and calculate the pause mask and VAM
+        #
+        # ----------------------------------------------------------------------------------------
+        records = self._interpolate_records(records, constants.interpolation_timestep)
+        records['pause_mask'] = self._calculate_pause_mask(records)
+
+        if 'altitude' in records.columns:
+            records['vam'] = self._calculate_vam(records.altitude)
+
+
+        # ----------------------------------------------------------------------------------------
+        #
+        # unit conversions
+        #
+        # ----------------------------------------------------------------------------------------
+
         # lat/lon coordinates from semicircles to degrees 
         # (note that indoor rides don't have these columns)
         if 'lat' in records.columns:
             records['lat'] *= constants.semicircles_to_degrees
             records['lon'] *= constants.semicircles_to_degrees
 
-        # calculate elapsed time in seconds and drop the timepoint column
-        timestamps = records.timepoint.apply(pd.to_datetime)
-
-        # save the timestamp of the first record, which 
-        # 1) may not be the same as the timestamps from the FIT file or Strava;
-        # 2) correpsonds to the t = 0 time of the elapsed_time column
-        start_timestamp = timestamps[0]
-        self.metadata.at['records_timestamp'] = start_timestamp
-
-        records['elapsed_time'] = np.array([dt.seconds for dt in (timestamps - start_timestamp)])
-        records.drop(['timepoint'], axis=1, inplace=True)
-
-        # interpolate records
-        records = self._interpolate_records(records, constants.interpolation_timestep)
-
-        # pause mask
-        records['pause_mask'] = self._calculate_pause_mask(records, start_timestamp)
-
-        # speed to mph
+        # m/s to mph
         if 'speed' in records.columns:
             records['speed'] *= (constants.miles_per_meter * constants.seconds_per_hour)
 
-        # calculate VAM, then switch altitude to feet
+        # meters to feet
         if 'altitude' in records.columns:
-            records['vam'] = self._calculate_vam(records.altitude)
             records['altitude'] *= constants.feet_per_meter
 
-        # distance to miles
+        # meters to miles
         if 'distance' in records.columns:
             records['distance'] *= constants.miles_per_meter
 
@@ -315,17 +325,19 @@ class Activity(object):
         return new_records
 
 
-    def _calculate_pause_mask(self, records, t0):
+    def _calculate_pause_mask(self, records):
         '''
         Generate a pause mask from the pauses implied by in-activity start and stop events 
 
         Parameters
         ----------
         records : interpolated records
-        t0 : timestamp of the first record 
-             (i.e., the timestamp corresponding to records.elapsed_time = 0)
 
         '''
+
+        # timestamp of the first record 
+        # (i.e., the timestamp corresponding to records.elapsed_time==0)
+        t0 = pd.to_datetime(self.metadata.records_timestamp)
 
         # remove initial start time and final stop time
         events = self.events('raw').iloc[1:-1]
@@ -344,7 +356,7 @@ class Activity(object):
         return mask
 
 
-    def infer_pauses(self):
+    def _infer_pauses(self):
         '''
         Infer pauses from the raw records data
 
@@ -533,6 +545,9 @@ class LocalActivity(Activity):
     '''
 
     def __init__(self, fit_data, strava_metadata=None):
+
+        self._fit_data = fit_data
+        self._strava_metadata = strava_metadata
 
         # message types required in raw FIT data
         required_message_names = ['file_id', 'device_info', 'session', 'event', 'record']
@@ -749,20 +764,23 @@ class LocalActivity(Activity):
 
         # ------------------------------------------------------------------------------------
         #
-        # initialize metadata with activity_id and file_id timestamp
+        # initialize metadata with activity_id and timestamps 
+        # from both the file_id and the first record, which may not be the same
+        # (and the timestamp of the first record will be important in, e.g., self._calculate_pause_mask)
         #
         # ------------------------------------------------------------------------------------
         metadata = {
             'activity_id': cls.id_from_fit(file_id=file_id),
-            'file_date': str(file_id.time_created),
+            'file_timestamp': str(file_id.time_created),
+            'records_timestamp': str(fit_data['record'].iloc[0].timestamp),
         }
 
         # copy some fields directly from strava metadata
         if strava_metadata is not None:
             metadata.update({
-                'strava_date': strava_metadata['date'],
-                'strava_title': strava_metadata['name'],
                 'filename': strava_metadata['filename'],
+                'strava_title': strava_metadata['name'],
+                'strava_timestamp': strava_metadata['date'],
             })
 
         # ------------------------------------------------------------------------------------

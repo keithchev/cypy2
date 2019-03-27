@@ -76,9 +76,10 @@ CREATE TABLE metadata (
     activity_id           char(14) PRIMARY KEY,
     activity_type         ACTIVITY_TYPE,
     filename              varchar,
-    file_date             timestamp,
-    strava_date           timestamp,
     strava_title          varchar,
+    file_timestamp        timestamp,
+    strava_timestamp      timestamp,
+    records_timestamp     timestamp,
 
     bike_name             BIKE_NAME,
     cycling_type          CYCLING_TYPE,
