@@ -54,6 +54,7 @@ class ActivityManager(object):
 
         activities = []
         for activity_id in activity_ids:
+            sys.stdout.write('\r%s' % activity_id)
             try:
                 activity = Activity.from_db(conn, activity_id)
             except Exception as error:
@@ -71,7 +72,7 @@ class ActivityManager(object):
         _activities = self._activities
         if func:
             _activities = [a for a in _activities if func(a)]
-    
+
         if activity_id:
             _activities = [a for a in _activities if a.metadata['activity_id'].startswith(activity_id)]
 

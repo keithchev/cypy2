@@ -71,19 +71,25 @@ class Activity(object):
     '''
 
 
-    def __init__(self, metadata, data, source='db'):
+    def __init__(self, metadata, raw_data, processed_data=None, source='db'):
 
-        self.metadata = metadata
+
         # self._validate_metadata(metadata)
+        self.metadata = metadata
 
-        # check that expected types of raw data are present
-        self._data = data
         required_raw_data = ['events', 'summary', 'records']
-        if set(required_raw_data).difference(data.keys()):
-            raise ValueError('Some data types are missing')
+        if set(required_raw_data).difference(raw_data.keys()):
+            raise ValueError('Some raw data types are missing')
+        self._raw_data = raw_data
 
+        assert(source in ['local', 'db'])
         self.source = source
-        assert(self.source in ['local', 'db'])
+        
+        if processed_data is not None:
+            self._processed_data = process_data
+        else:
+            self._processed_data = {}
+            self._processed_data['records'] = self.process_records()
 
 
     @classmethod
@@ -199,13 +205,6 @@ class Activity(object):
 
 
 
-    def data(self, kind=None, columns=None):
-        '''
-        '''
-        assert(kind in ['events', 'summary', 'records'])
-
-
-
     def process_records(self):
         '''
         Generate processed records from raw records
@@ -256,9 +255,9 @@ class Activity(object):
 
         # interpolate
         records = self._interpolate_records(records, constants.interpolation_timestep)
-        
+
         records.index = records.elapsed_time
-        
+
         # calculate VAM (this is slow)
         records['vam'] = self._calculate_vam(records.altitude)
 
@@ -285,6 +284,7 @@ class Activity(object):
         '''
 
         assert('timepoint' in records.columns)
+
         timepoints = records.timepoint.apply(pd.to_datetime)
         timepoints = [t.seconds for t in (timepoints - timepoints.iloc[0])]
         new_timepoints = np.arange(timepoints[0], timepoints[-1], timestep)
@@ -366,14 +366,17 @@ class Activity(object):
             return self._derive_events()
 
 
-    def records(self, kind='raw'):
+    def records(self, kind='raw', cached=True):
 
         if kind=='raw':
-            return self._data['records'].copy()
+            records = self._raw_data['records'].copy()
 
         if kind.startswith('proc'):
-            return self.process_records()
-
+            if cached:
+                records = self._processed_data['records'].copy()
+            else:
+                records = self.process_records()
+        return records
 
 
     def plot(self, columns=None, overlay=False, xmode='time', xrange=None, halflife=None):
