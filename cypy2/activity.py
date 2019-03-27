@@ -237,11 +237,10 @@ class Activity(object):
         #
         # ------------------------------------------------------------------------------- 
 
-
         # column renaming for convenience
         records.rename(columns={'position_lat': 'lat', 'position_long': 'lon'}, inplace=True)
 
-        # drop the 'enhanced' speed and altitude columns, 
+        # drop the enhanced speed and altitude columns, 
         # since they seem to be identical to the 'normal' speed and altitude columns
         # TODO: determine whether this is always true
         dropped_columns = ['enhanced_speed', 'enhanced_altitude']
@@ -249,15 +248,30 @@ class Activity(object):
             if column in records.columns:
                 records.drop([column], axis=1, inplace=True)
 
+
         # lat/lon coordinates from semicircles to degrees 
         # (note that indoor rides don't have these columns)
         if 'lat' in records.columns:
             records['lat'] *= constants.semicircles_to_degrees
             records['lon'] *= constants.semicircles_to_degrees
 
-        # interpolate
+        # calculate elapsed time in seconds and drop the timepoint column
+        timestamps = records.timepoint.apply(pd.to_datetime)
+
+        # save the timestamp of the first record, which 
+        # 1) may not be the same as the timestamps from the FIT file or Strava;
+        # 2) correpsonds to the t = 0 time of the elapsed_time column
+        start_timestamp = timestamps[0]
+        self.metadata.at['records_timestamp'] = start_timestamp
+
+        records['elapsed_time'] = np.array([dt.seconds for dt in (timestamps - start_timestamp)])
+        records.drop(['timepoint'], axis=1, inplace=True)
+
+        # interpolate records
         records = self._interpolate_records(records, constants.interpolation_timestep)
-        records.index = records.elapsed_time
+
+        # pause mask
+        records['pause_mask'] = self._calculate_pause_mask(records, start_timestamp)
 
         # speed to mph
         if 'speed' in records.columns:
@@ -282,21 +296,71 @@ class Activity(object):
 
         Note that this is not always necessary, since for many activities,
         the sampling rate is constant (rather than variable/dynamic). 
+
+        TODO: drop *internal* NAs prior to interpolating
+              (but retain initial or trailing NAs)
+
         '''
 
-        assert('timepoint' in records.columns)
-
-        timepoints = records.timepoint.apply(pd.to_datetime)
-        timepoints = [t.seconds for t in (timepoints - timepoints.iloc[0])]
-        new_timepoints = np.arange(timepoints[0], timepoints[-1], timestep)
+        timepoints = records.elapsed_time.values
+        new_timepoints = np.arange(0, timepoints[-1], timestep)
 
         new_records = pd.DataFrame()
-        for column in set(records.columns).difference(['timepoint']):
-            interpolator = interpolate.interp1d(timepoints, records[column].values, kind='linear')
+        for column in set(records.columns).difference(['elapsed_time']):
+            values, mask = records[column].values, records[column].isna().values
+            interpolator = interpolate.interp1d(timepoints, values, kind='linear')
             new_records[column] = interpolator(new_timepoints)
 
         new_records['elapsed_time'] = new_timepoints
         return new_records
+
+
+    def _calculate_pause_mask(self, records, t0):
+        '''
+        Generate a pause mask from the pauses implied by in-activity start and stop events 
+
+        Parameters
+        ----------
+        records : interpolated records
+        t0 : timestamp of the first record 
+             (i.e., the timestamp corresponding to records.elapsed_time = 0)
+
+        '''
+
+        # remove initial start time and final stop time
+        events = self.events('raw').iloc[1:-1]
+
+        starts = events.loc[events.event_type=='start'].event_time
+        stops = events.loc[events.event_type=='stop'].event_time
+
+        elapsed_time = records.elapsed_time.values
+        mask =  np.zeros(*elapsed_time.shape)
+
+        for start, stop in zip(starts, stops):
+            pause_start, pause_stop = (stop - t0).seconds, (start - t0).seconds
+            mask += (elapsed_time > pause_start) & (elapsed_time < pause_stop)
+
+        mask = mask.astype(bool)
+        return mask
+
+
+    def infer_pauses(self):
+        '''
+        Infer pauses from the raw records data
+
+        ** currently unused **
+        '''
+
+        d = self.records('raw')
+        timestamps = d.timepoint.apply(pd.to_datetime)
+        elapsed_time = [t.seconds for t in (timestamps - timestamps[0])]
+
+        counts = np.bincount(np.diff(elapsed_time))
+        x = np.argwhere(counts).flatten()
+        counts = counts[counts > 0]
+
+        pauses = pd.DataFrame(data=list(zip(x, counts)), columns=['timestep', 'frequency'])
+        return pauses
 
 
     @staticmethod
@@ -361,7 +425,7 @@ class Activity(object):
         assert(kind in ['raw', 'derived'])
 
         if kind=='raw':
-            return self._data['events'].copy()
+            return self._raw_data['events'].copy()
 
         if kind=='derived':
             return self._derive_events()
@@ -380,20 +444,30 @@ class Activity(object):
         return records
 
 
-    def plot(self, columns=None, overlay=False, xmode='time', xrange=None, halflife=None):
+    def plot(self, columns=None, overlay=False, xmode='hours', xrange=None, halflife=None):
 
         colors = sns.color_palette()
 
-        xlabels = {'time': 'Elapsed time (hours)', 'distance': 'Distance (miles)'}
+        xlabels = {
+            'seconds': 'Elapsed time (seconds)', 
+            'minutes': 'Elapsed time (minutes)',
+            'hours': 'Elapsed time (hours)',
+            'distance': 'Distance (miles)',
+        }
 
         def _style_axis(ax):
             ax.yaxis.grid(b=False)
             ax.xaxis.grid(linestyle='dotted', color=tuple(np.ones(3)*.7))
     
         records = self.records('processed')
-        if xmode=='time':
+
+        if xmode=='seconds':
+            x = records.elapsed_time.values
+        if xmode=='minutes':
+            x = records.elapsed_time.values/60
+        if xmode=='hours':
             x = records.elapsed_time.values/3600
-        if xmode=='distance':
+        if xmode=='miles':
             x = records.distance.values
 
         if xrange:
