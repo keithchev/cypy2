@@ -86,7 +86,7 @@ class Activity(object):
         self.source = source
         
         if processed_data is not None:
-            self._processed_data = process_data
+            self._processed_data = processed_data
         else:
             self._processed_data = {}
             self._processed_data['records'] = self.process_records()
@@ -152,6 +152,10 @@ class Activity(object):
 
         if kind=='processed':
             self._processed_data_to_db(conn, verbose)
+
+
+    def _raw_data_to_db(self, *args):
+        raise NotImplementedError('_raw_data_to_db must be defined by subclasses')
 
 
     def _processed_data_to_db(self, conn, verbose):
@@ -442,9 +446,8 @@ class Activity(object):
 
         if kind=='raw':
             return self._raw_data['events'].copy()
-
-        if kind=='derived':
-            return self._derive_events()
+        else:
+            raise ValueError('events data is only raw')
 
 
     def records(self, kind='raw', cached=True):
@@ -468,7 +471,7 @@ class Activity(object):
             'seconds': 'Elapsed time (seconds)', 
             'minutes': 'Elapsed time (minutes)',
             'hours': 'Elapsed time (hours)',
-            'distance': 'Distance (miles)',
+            'miles': 'Distance (miles)',
         }
 
         def _style_axis(ax):
