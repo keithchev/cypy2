@@ -29,16 +29,20 @@ class ActivityManager(object):
 
 
     @classmethod
-    def from_strava_export(cls, strava_export_manager):
+    def from_strava_export(cls, strava_export_manager, raise_errors=False):
 
         activities = []
         for ind, data in enumerate(strava_export_manager.parsed_data):
             try:
                 activity = LocalActivity.from_strava_export(data)
-            except Exception as error:
-                print('Warning: error parsing data at index %s:\n%s' % (ind, error))
+                activities.append(activity)
+                sys.stdout.write('\r%s' % activity.metadata.activity_id)
+            except Exception as err:
+                if raise_errors:
+                    raise
+                else:
+                    print('Warning: error parsing data at index %s:\n%s' % (ind, err))
 
-            activities.append(activity)
         return cls(activities)
 
 

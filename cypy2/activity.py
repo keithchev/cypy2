@@ -229,8 +229,9 @@ class Activity(object):
         #
         if 'speed' in records.columns:
             speed = records.speed.values
-            speed[speed > 30] /= 1000
-            records['speed'] = speed
+            if max(speed) > 30:
+                speed = speed/1000
+                records['speed'] = speed
 
         if 'altitude' in records.columns:
             alt = records.altitude.values
