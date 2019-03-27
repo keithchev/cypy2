@@ -57,10 +57,10 @@ class ActivityManager(object):
             sys.stdout.write('\r%s' % activity_id)
             try:
                 activity = Activity.from_db(conn, activity_id)
+                activities.append(activity)
             except Exception as error:
                 print('Error loading activity_id %s:\n%s' % (activity_id, error))
 
-            activities.append(activity)
         return cls(activities)
 
 

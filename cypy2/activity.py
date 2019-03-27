@@ -226,12 +226,14 @@ class Activity(object):
         #
         # temporary hack to correct fitparse bug
         #
-        speed = records.speed.values
-        speed[speed > 30] /= 1000
-        records['speed'] = speed
+        if 'speed' in records.columns:
+            speed = records.speed.values
+            speed[speed > 30] /= 1000
+            records['speed'] = speed
 
-        alt = records.altitude.values
-        records['altitude'] = (alt - 2500)/5.
+        if 'altitude' in records.columns:
+            alt = records.altitude.values
+            records['altitude'] = (alt - 2500)/5.
         #
         # ------------------------------------------------------------------------------- 
 
@@ -255,21 +257,20 @@ class Activity(object):
 
         # interpolate
         records = self._interpolate_records(records, constants.interpolation_timestep)
-
         records.index = records.elapsed_time
 
-        # calculate VAM (this is slow)
-        records['vam'] = self._calculate_vam(records.altitude)
-
         # speed to mph
-        records['speed'] *= (constants.miles_per_meter * constants.seconds_per_hour)
+        if 'speed' in records.columns:
+            records['speed'] *= (constants.miles_per_meter * constants.seconds_per_hour)
 
-        # altitude to feet
-        records['altitude'] *= constants.feet_per_meter
+        # calculate VAM, then switch altitude to feet
+        if 'altitude' in records.columns:
+            records['vam'] = self._calculate_vam(records.altitude)
+            records['altitude'] *= constants.feet_per_meter
 
         # distance to miles
-        records['distance'] *= constants.miles_per_meter
-
+        if 'distance' in records.columns:
+            records['distance'] *= constants.miles_per_meter
 
         return records
 
