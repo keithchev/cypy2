@@ -178,8 +178,11 @@ class Activity(object):
             print('Warning in Activity.to_db: uncommitted local changes in cypy2/activity.py')
 
         # create a new row in the proc_records table
-        pgutils.insert_value(conn, table, {'activity_id': activity_id, 'commit_hash': current_commit})
-        conn.commit()
+        try:
+            pgutils.insert_value(conn, table, {'activity_id': activity_id, 'commit_hash': current_commit})
+        except psycopg2.Error as error:
+            print('Error inserting data for activity %s:\n%s' % (activity_id, error))
+            return
 
         # get the new row (assumes we're the only user currently inserting rows)
         row = pd.read_sql(
