@@ -486,6 +486,14 @@ class Activity(object):
             ax.yaxis.grid(b=False)
             ax.xaxis.grid(linestyle='dotted', color=tuple(np.ones(3)*.7))
     
+        def _make_pause_rects(starts, stops, y_min, y_max):
+            rects = []
+            for start, stop in zip(starts, stops):
+                rect = mpl.patches.Rectangle((start, y_min), stop - start, y_max - y_min)
+                rects.append(rect)
+            return rects
+
+
         draw_pauses = True
         records = self.records('processed')
 
@@ -507,29 +515,19 @@ class Activity(object):
         offset = min(xrange)
 
         if draw_pauses:    
-            starts = np.argwhere(np.diff(pause_mask.astype(int))==1).flatten() + 1 
-            stops = np.argwhere(np.diff(pause_mask.astype(int))==-1).flatten() + 1
-            starts, stops = starts/xscales[xmode] + offset, stops/xscales[xmode] + offset
+            starts, stops = [
+                np.argwhere(np.diff(pause_mask.astype(int))==dp).flatten() for dp in [1, -1]]
+
+            starts, stops = (starts + 1)/xscales[xmode] + offset, (stops + 1)/xscales[xmode] + offset
 
             if not starts.size and not stops.size:
                 draw_pauses = False
 
             elif (stops.size and not starts.size) or (starts[0] > stops[0]):
-                starts = [0] + list(starts)
+                starts = [min(xrange)] + list(starts)
 
             elif (starts.size and not stops.size) or (stops[-1] < starts[-1]):
                 stops = list(stops) + [max(xrange)]
-
-        def _make_pause_rects(y_min, y_max):
-            rects = []
-            for start, stop in zip(starts, stops):
-
-                rect = mpl.patches.Rectangle((start, y_min), stop - start, y_max - y_min)
-                rects.append(rect)
-
-            pause_collection = mpl.collections.PatchCollection(
-                rects, facecolor=np.ones(3)*.9, alpha=.5, edgecolor=None)
-            return pause_collection
 
 
         if isinstance(columns, str):
@@ -549,10 +547,12 @@ class Activity(object):
             if halflife:
                 y = y.ewm(halflife=halflife).mean()
             y = y[mask]
-            maxx, minn = y.max(), y.min()
 
             if draw_pauses:
-                ax.add_collection(_make_pause_rects(minn, maxx))
+                rects = _make_pause_rects(starts, stops, y.min(), y.max())
+                collection = mpl.collections.PatchCollection(
+                    rects, facecolor=np.ones(3)*.9, alpha=.5, edgecolor=None)
+                ax.add_collection(collection)
 
             ax.plot(x, y, color=color, label=column)
             ax.set_ylabel(column)
