@@ -14,6 +14,7 @@ import pandas as pd
 import seaborn as sns
 
 from scipy import interpolate
+import matplotlib as mpl
 from matplotlib import pyplot as plt
 
 from cypy2 import (utils, constants, file_utils, file_settings, constants)
@@ -474,25 +475,62 @@ class Activity(object):
             'miles': 'Distance (miles)',
         }
 
+        # scales when x-axis is time
+        xscales = {
+            'hours': 3600,
+            'minutes': 60,
+            'seconds': 1,
+        }
+
         def _style_axis(ax):
             ax.yaxis.grid(b=False)
             ax.xaxis.grid(linestyle='dotted', color=tuple(np.ones(3)*.7))
     
+        draw_pauses = True
         records = self.records('processed')
 
-        if xmode=='seconds':
+        if xmode in ['seconds', 'minutes', 'hours']:
             x = records.elapsed_time.values
-        if xmode=='minutes':
-            x = records.elapsed_time.values/60
-        if xmode=='hours':
-            x = records.elapsed_time.values/3600
-        if xmode=='miles':
-            x = records.distance.values
+            x = x / xscales[xmode]
 
-        if xrange:
-            mask = (x > min(xrange)) & (x < max(xrange))
-        else:
-            mask = np.ones(x.shape).astype(bool)
+        elif xmode=='miles':
+            x = records.distance.values
+            draw_pauses = False
+
+        if not xrange:
+            xrange = [0, max(x)]
+
+        mask = (x > min(xrange)) & (x < max(xrange))
+
+        x = x[mask]
+        pause_mask = records.pause_mask.values[mask]
+        offset = min(xrange)
+
+        if draw_pauses:    
+            starts = np.argwhere(np.diff(pause_mask.astype(int))==1).flatten() + 1 
+            stops = np.argwhere(np.diff(pause_mask.astype(int))==-1).flatten() + 1
+            starts, stops = starts/xscales[xmode] + offset, stops/xscales[xmode] + offset
+
+            if not starts.size and not stops.size:
+                draw_pauses = False
+
+            elif (stops.size and not starts.size) or (starts[0] > stops[0]):
+                starts = [0] + list(starts)
+
+            elif (starts.size and not stops.size) or (stops[-1] < starts[-1]):
+                stops = list(stops) + [max(xrange)]
+
+        def _make_pause_rects(y_min, y_max):
+            rects = []
+            for start, stop in zip(starts, stops):
+
+                rect = mpl.patches.Rectangle((start, y_min), stop - start, y_max - y_min)
+                rects.append(rect)
+
+            pause_collection = mpl.collections.PatchCollection(
+                rects, facecolor=np.ones(3)*.9, alpha=.5, edgecolor=None)
+            return pause_collection
+
 
         if isinstance(columns, str):
             columns = [columns]
@@ -510,13 +548,18 @@ class Activity(object):
             y = records[column]
             if halflife:
                 y = y.ewm(halflife=halflife).mean()
+            y = y[mask]
+            maxx, minn = y.max(), y.min()
 
-            ax.plot(x[mask], y[mask], color=color, label=column)
+            if draw_pauses:
+                ax.add_collection(_make_pause_rects(minn, maxx))
+
+            ax.plot(x, y, color=color, label=column)
             ax.set_ylabel(column)
 
         for ind, ax in enumerate(axs):
             _style_axis(ax)
-            if ind < len(axs) - 1:
+            if ind < len(axs) - 1 and not overlay:
                 ax.get_xaxis().set_ticklabels([])
         axs[-1].set_xlabel(xlabels[xmode])
 
