@@ -10,14 +10,9 @@ import numpy as np
 import pandas as pd
 from io import StringIO
 
-from cypy2 import (file_utils, file_settings)
+from cypy2 import (file_utils, file_settings, dbutils)
 from cypy2.activity import (Activity, LocalActivity)
 
-try:
-    import pgutils
-except ModuleNotFoundError:
-    sys.path.append('../../../_projects-gh/pgutils/')
-    import pgutils
 
 
 class ActivityManager(object):
@@ -54,7 +49,7 @@ class ActivityManager(object):
         '''
 
         # all activity_ids in the database
-        activity_ids = pgutils.get_rows(conn, 'metadata', column='activity_id').values.flatten()
+        activity_ids = dbutils.get_rows(conn, 'metadata', column='activity_id').values.flatten()
 
         activities = []
         for activity_id in activity_ids:

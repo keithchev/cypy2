@@ -17,13 +17,7 @@ from scipy import interpolate
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 
-from cypy2 import (utils, constants, file_utils, file_settings, constants)
-
-try:
-    import pgutils
-except ModuleNotFoundError:
-    sys.path.append('../../../_projects-gh/pgutils/')
-    import pgutils
+from cypy2 import (utils, constants, file_utils, file_settings, constants, dbutils)
 
 
 class Activity(object):
@@ -103,9 +97,9 @@ class Activity(object):
 
         selector = {'activity_id': activity_id}
 
-        metadata = pgutils.get_rows(conn, 'metadata', selector)
-        events = pgutils.get_rows(conn, 'raw_events', selector)
-        records = pgutils.get_rows(conn, 'raw_records', selector)
+        metadata = dbutils.get_rows(conn, 'metadata', selector)
+        events = dbutils.get_rows(conn, 'raw_events', selector)
+        records = dbutils.get_rows(conn, 'raw_records', selector)
 
         # records from a one-row dataframe of lists to a dataframe of timepoints
         records = pd.DataFrame(records.to_dict(orient='records').pop())
@@ -184,7 +178,7 @@ class Activity(object):
 
         # create a new row in the proc_records table
         try:
-            pgutils.insert_value(conn, table, {'activity_id': activity_id, 'commit_hash': current_commit})
+            dbutils.insert_value(conn, table, {'activity_id': activity_id, 'commit_hash': current_commit})
         except psycopg2.Error as error:
             print('Error inserting data for activity %s:\n%s' % (activity_id, error))
             return
@@ -199,10 +193,10 @@ class Activity(object):
 
         # update the data columns
         records = self.records(kind='processed')
-        columns = pgutils.get_column_names(conn, table)
+        columns = dbutils.get_column_names(conn, table)
         for column in columns:
             if column in records.columns:
-                pgutils.update_value(
+                dbutils.update_value(
                     conn,
                     table=table, 
                     column=column,
@@ -546,6 +540,8 @@ class Activity(object):
             y = records[column]
             if halflife:
                 y = y.ewm(halflife=halflife).mean()
+            if column=='vam':
+                y[y < 0] = 0
             y = y[mask]
 
             if draw_pauses:
@@ -675,11 +671,11 @@ class LocalActivity(Activity):
         #
         # ------------------------------------------------------------------------------------
 
-        # metadata as a (one-row) DataFrame so we can use pgutils.dataframe_to_table
+        # metadata as a (one-row) DataFrame so we can use dbutils.dataframe_to_table
         # TODO: decide how to handle database errors
         metadata = pd.DataFrame(data=[self.metadata])
         try:
-            pgutils.dataframe_to_table(conn, 'metadata', metadata, raise_errors=True)
+            dbutils.dataframe_to_table(conn, 'metadata', metadata, raise_errors=True)
             conn.commit()
         except psycopg2.Error as error:
             print('Error inserting metadata: %s' % error)
@@ -692,7 +688,7 @@ class LocalActivity(Activity):
         #
         # ------------------------------------------------------------------------------------
         events = self.events(kind='raw')
-        pgutils.dataframe_to_table(conn, 'raw_events', events, raise_errors=False)
+        dbutils.dataframe_to_table(conn, 'raw_events', events, raise_errors=False)
         conn.commit()
 
 
@@ -711,16 +707,16 @@ class LocalActivity(Activity):
         #
         # ------------------------------------------------------------------------------------
         # create a new row in raw_records for this activity
-        pgutils.insert_value(conn, 'raw_records', {'activity_id': activity_id})
+        dbutils.insert_value(conn, 'raw_records', {'activity_id': activity_id})
         conn.commit()
 
         records = self.records(kind='raw')
 
         # note that update_value will overwrite any existing values
-        columns = pgutils.get_column_names(conn, 'raw_records')
+        columns = dbutils.get_column_names(conn, 'raw_records')
         for column in columns:
             if column in records.columns:
-                pgutils.update_value(
+                dbutils.update_value(
                     conn,
                     table='raw_records', 
                     column=column,
