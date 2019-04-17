@@ -42,7 +42,7 @@ class ActivityManager(object):
 
 
     @classmethod
-    def from_db(cls, conn):
+    def from_db(cls, conn, kind='metadata'):
         '''
         load all activities from a cypy2 database
         
@@ -55,7 +55,7 @@ class ActivityManager(object):
         for activity_id in activity_ids:
             sys.stdout.write('\r%s' % activity_id)
             try:
-                activity = Activity.from_db(conn, activity_id)
+                activity = Activity.from_db(conn, activity_id, kind=kind)
                 activities.append(activity)
             except Exception as error:
                 print('Error loading activity_id %s:\n%s' % (activity_id, error))
