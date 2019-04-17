@@ -12,9 +12,10 @@ import subprocess
 import numpy as np
 import pandas as pd
 import seaborn as sns
-
-from scipy import interpolate
 import matplotlib as mpl
+
+from psycopg2 import sql
+from scipy import interpolate
 from matplotlib import pyplot as plt
 
 from cypy2 import (utils, constants, file_utils, file_settings, constants, dbutils)
@@ -218,10 +219,22 @@ class Activity(object):
         '''
         Load the activity's most recent processed data from a database
 
-        TODO: implement this!
         '''
-        selector = {'activity_id': self.metadata.activity_id}
-        return None
+        
+        query = sql.SQL(
+            'select * from proc_records where activity_id = {} order by date_created desc limit 1')
+        query = query.format(sql.Literal(self.metadata.activity_id)).as_string(conn)
+
+        records = pd.DataFrame(pd.read_sql(query, conn).to_dict(orient='records').pop())
+        records.drop(
+            ['activity_id', 'date_created', 'date_modified', 'commit_hash', 'geom'], 
+            axis=1, 
+            inplace=True)
+
+        records.dropna(axis=1, how='all', inplace=True)
+
+        processed_data = {'events': None, 'records': records, 'summary': None}
+        return processed_data
 
 
     def _processed_data_to_db(self, conn, verbose):
@@ -275,7 +288,6 @@ class Activity(object):
                     selector={'activity_id': activity_id, 'date_created': row.date_created})
 
         conn.commit()
-
 
 
     def process_records(self):
