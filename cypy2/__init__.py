@@ -4,7 +4,7 @@ try:
 except ModuleNotFoundError:
     sys.path.append('../../../_projects-gh/dbutils/')
     import dbutils
-    
+
 from cypy2 import (
 	utils,
 	file_utils,
@@ -13,5 +13,3 @@ from cypy2 import (
 
 from cypy2.activity import (Activity, LocalActivity)
 from cypy2.managers import (ActivityManager, StravaExportManager)
-
-

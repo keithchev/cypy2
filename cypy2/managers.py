@@ -29,9 +29,9 @@ class ActivityManager(object):
         activities = []
         for ind, data in enumerate(strava_export_manager.parsed_data):
             try:
+                sys.stdout.write('\r%s' % activity.metadata.activity_id)
                 activity = LocalActivity.from_strava_export(data)
                 activities.append(activity)
-                sys.stdout.write('\r%s' % activity.metadata.activity_id)
             except Exception as err:
                 if raise_errors:
                     raise
@@ -111,7 +111,6 @@ class StravaExportManager(object):
             self.root_dirname)
 
         os.makedirs(self.cache_dirpath, exist_ok=True)
-
         self.metadata = pd.read_csv(os.path.join(self.root_dirpath, 'activities.csv'))
 
         if from_cache:

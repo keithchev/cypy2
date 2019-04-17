@@ -2,7 +2,9 @@
 import numpy as np
 
 def weighted_linregress(x, y, w):
-    
+    '''
+    TODO: write doc
+    '''
     X = np.concatenate((np.ones((len(x), 1)), x[:, None]), axis=1)
     Xt = X.transpose()
     Y = y[:, None]
