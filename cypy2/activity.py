@@ -292,15 +292,19 @@ class Activity(object):
         conn.commit()
 
         # insert the trajectory geometries using ST_GeomFromGeoJSON
-        # note that the order must be (lon, lat, elevation, measurement)
+
+        # there are no lat/lon for indoor rides
+        if 'lat' not in records.columns or 'lon' not in records.columns:
+            print('Warning: no lat/lon coords for activity %s' % activity_id)
+            return
+
+        # note that the column order must be (lon, lat, elevation, measurement)
         coordinates = records[['lon', 'lat', 'altitude', 'elapsed_time']].copy()
 
-        # postGIS converts nulls to zeros, so we have to drop all rows with any nans
+        # postGIS converts nulls to zeros, so we have to drop all rows with any nans        
         coordinates.dropna(how='any', axis=0, inplace=True)
-
-        # no lat/lon for indoor rides
-        if coordinates.shape[0]:
-            print('Warning: no lat/lon coords for activity %s' % activity_id)
+        if not coordinates.shape[0]:
+            print('Warning: all lat/lon coords for activity %s are missing' % activity_id)
             return
 
         # full four-dimensional geometry with elevation and timestamp
