@@ -275,6 +275,9 @@ class Activity(object):
         # sanity check
         assert(row.activity_id==activity_id)
 
+        # columns and values that select the row we just created
+        selector = {'activity_id': activity_id, 'date_created': row.date_created}
+
         # update the data columns of the new row
         records = self.records(kind='processed')
         columns = dbutils.get_column_names(conn, table)
@@ -285,7 +288,7 @@ class Activity(object):
                     table=table, 
                     column=column,
                     value=records[column], 
-                    selector={'activity_id': activity_id, 'date_created': row.date_created})
+                    selector=selector)
         conn.commit()
 
         # insert the trajectory geometries using ST_GeomFromGeoJSON
@@ -295,31 +298,35 @@ class Activity(object):
         # postGIS converts nulls to zeros, so we have to drop all rows with any nans
         coordinates.dropna(how='any', axis=0, inplace=True)
 
-        # two-dimensional geometry (as a LineString)
-        geom = {
-            'type': 'LineString',
-            'coordinates': coordinates[['lon', 'lat']].values.tolist()
-        }
+        # no lat/lon for indoor rides
+        if coordinates.shape[0]:
+            print('Warning: no lat/lon coords for activity %s' % activity_id)
+            return
 
-        # four-dimensional geometry (as a LineStringMZ) with elevation and timestamp
-        geom4d = {
+        # full four-dimensional geometry with elevation and timestamp
+        geom = {
             'type': 'LineString',
             'coordinates': coordinates.values.tolist()
         }
+        value = json.dumps(geom)
 
-        # the hard-coded projection here (4326) must match that specified in the schema
+        # note that the hard-coded projection here (4326) must match that specified in the schema
         query = sql.SQL(
-            'update proc_records set geom = ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326) '
-            'where activity_id = {activity_id}'
-        ).format(activity_id=sql.Literal(activity_id))
-        dbutils.execute_query(conn, query, (json.dumps(geom),), commit=True)
+            'update proc_records set {column} = {st_force}(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326))')
 
-        # note that this won't work without the ST_Force4D (not sure why)
-        query = sql.SQL(
-            'update proc_records set geom4d = ST_Force4D(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326)) '
-            'where activity_id = {activity_id}'
-        ).format(activity_id=sql.Literal(activity_id))
-        dbutils.execute_query(conn, query, (json.dumps(geom4d),), commit=True)
+        # the 'geom' column must be a LineString
+        query_2d = query.format(
+            column=sql.Identifier('geom'),
+            st_force=sql.SQL('ST_Force2D'))
+
+        # the 'geom4d' column must be a LineStringZM
+        query_4d = query.format(
+            column=sql.Identifier('geom4d'),
+            st_force=sql.SQL('ST_Force4D'))
+
+        for query in [query_2d, query_4d]:
+            full_query = sql.SQL(' ').join([query, dbutils.where_clause(selector)])
+            dbutils.execute_query(conn, full_query, (value,), commit=True)
 
 
     def process_records(self):
