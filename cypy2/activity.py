@@ -4,6 +4,7 @@ import sys
 import git
 import glob
 import time
+import json
 import shutil
 import pickle
 import datetime
@@ -88,16 +89,15 @@ class Activity(object):
 
 
     @classmethod
-    def from_db(cls, conn, activity_id, kind='metadata'):
+    def from_db(cls, conn, activity_id, kind=None):
         '''
         Initialize an activity from a cypy2 database
         
         Parameters
         ----------
         kind : the kind of data to load
-            one of 'metadata', 'raw', 'processed', or 'all'
-
-        TODO: implement processed data loading 
+            one of None, 'raw', 'processed', or 'all'
+            if None, only the activity metadata is loaded
 
         '''
 
@@ -275,7 +275,7 @@ class Activity(object):
         # sanity check
         assert(row.activity_id==activity_id)
 
-        # update the data columns
+        # update the data columns of the new row
         records = self.records(kind='processed')
         columns = dbutils.get_column_names(conn, table)
         for column in columns:
@@ -286,8 +286,40 @@ class Activity(object):
                     column=column,
                     value=records[column], 
                     selector={'activity_id': activity_id, 'date_created': row.date_created})
-
         conn.commit()
+
+        # insert the trajectory geometries using ST_GeomFromGeoJSON
+        # note that the order must be (lon, lat, elevation, measurement)
+        coordinates = records[['lon', 'lat', 'altitude', 'elapsed_time']].copy()
+
+        # postGIS converts nulls to zeros, so we have to drop all rows with any nans
+        coordinates.dropna(how='any', axis=0, inplace=True)
+
+        # two-dimensional geometry (as a LineString)
+        geom = {
+            'type': 'LineString',
+            'coordinates': coordinates[['lon', 'lat']].values.tolist()
+        }
+
+        # four-dimensional geometry (as a LineStringMZ) with elevation and timestamp
+        geom4d = {
+            'type': 'LineString',
+            'coordinates': coordinates.values.tolist()
+        }
+
+        # the hard-coded projection here (4326) must match that specified in the schema
+        query = sql.SQL(
+            'update proc_records set geom = ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326) '
+            'where activity_id = {activity_id}'
+        ).format(activity_id=sql.Literal(activity_id))
+        dbutils.execute_query(conn, query, (json.dumps(geom),), commit=True)
+
+        # note that this won't work without the ST_Force4D (not sure why)
+        query = sql.SQL(
+            'update proc_records set geom4d = ST_Force4D(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326)) '
+            'where activity_id = {activity_id}'
+        ).format(activity_id=sql.Literal(activity_id))
+        dbutils.execute_query(conn, query, (json.dumps(geom4d),), commit=True)
 
 
     def process_records(self):
@@ -388,10 +420,10 @@ class Activity(object):
     @staticmethod
     def _interpolate_records(records, timestep):
         '''
-        Interpolate records
+        Interpolate records to constant one-second sampling
 
         Note that this is not always necessary, since for many activities,
-        the sampling rate is constant (rather than variable/dynamic). 
+        the sampling rate is already constant (i.e., not variable/dynamic) 
 
         TODO: drop *internal* NAs prior to interpolating
               (but retain initial or trailing NAs)
@@ -402,12 +434,14 @@ class Activity(object):
         new_timepoints = np.arange(0, timepoints[-1], timestep)
 
         new_records = pd.DataFrame()
+        new_records['elapsed_time'] = new_timepoints
+
+        # interpolate each column with the new timepoints
         for column in set(records.columns).difference(['elapsed_time']):
             values, mask = records[column].values, records[column].isna().values
             interpolator = interpolate.interp1d(timepoints, values, kind='linear')
             new_records[column] = interpolator(new_timepoints)
 
-        new_records['elapsed_time'] = new_timepoints
         return new_records
 
 
