@@ -95,6 +95,8 @@ class Activity(object):
         
         Parameters
         ----------
+        conn : psycopg2 connection
+        activity_id : the id of the activity to load
         kind : the kind of data to load
             one of None, 'raw', 'processed', or 'all'
             if None, only the activity metadata is loaded
@@ -107,14 +109,8 @@ class Activity(object):
 
         # instantiate the activity
         activity = cls(metadata, source='db')
-
-        # load the raw data
-        if kind in ['raw', 'all']:
-            activity._raw_data_from_db(conn)
-    
-        # load the processed data
-        if kind in ['processed', 'all']:
-            activity._processed_data_from_db(conn)
+        if kind is not None:
+            activity.load(conn, kind)
 
         if kind=='raw' and process_flag:
             activity.process()
@@ -124,9 +120,32 @@ class Activity(object):
         return activity
 
 
+    def load(self, conn, kind='raw'):
+        '''
+        Load the activity's data from a cypy2 database
+        
+        Parameters
+        ----------
+        conn : psycopg2 connection
+        kind : the kind(s) of data to load: 'raw', 'processed', or 'all'
+
+        '''
+        if kind is None:
+            return
+
+        if kind not in ['raw', 'processed', 'all']:
+            raise ValueError('%s is not a valid kind of data' % kind)
+
+        if kind in ['raw', 'all']:
+            self._raw_data = self._raw_data_from_db(conn)
+
+        if kind in ['processed', 'all']:
+            self._processed_data = self._processed_data_from_db(conn)
+
+
     def _raw_data_from_db(self, conn):
         '''
-        Load the activity's raw data from a cypy2 database into self._raw_data
+        Load the activity's raw data from a cypy2 database
 
         '''
 
@@ -148,17 +167,30 @@ class Activity(object):
         # for now, skip loading the raw summary
         summary = None
 
-        self._raw_data = {'events': events, 'records': records, 'summary': summary}
+        raw_data = {'events': events, 'records': records, 'summary': summary}
+        return raw_data
+
+
+    def _processed_data_from_db(self, conn):
+        '''
+        Load the activity's most recent processed data from a database
+
+        '''
         
+        query = sql.SQL(
+            'select * from proc_records where activity_id = {} order by date_created desc limit 1')
+        query = query.format(sql.Literal(self.metadata.activity_id)).as_string(conn)
 
-    def _raw_data_to_db(self):
-        '''
-        Insert/update an activity's raw data in a cypy2 database
-        Currently only defined in the LocalActivity subclass, since the raw data should be static
-        (that is, an activity loaded from a database should not be able to update its own raw data)
+        records = pd.DataFrame(pd.read_sql(query, conn).to_dict(orient='records').pop())
+        records.drop(
+            ['activity_id', 'date_created', 'date_modified', 'commit_hash', 'geom'], 
+            axis=1, 
+            inplace=True)
 
-        '''
-        raise NotImplementedError('_raw_data_to_db must be defined in subclasses')
+        records.dropna(axis=1, how='all', inplace=True)
+
+        processed_data = {'events': None, 'summary': None, 'records': records}
+        return processed_data
 
 
     def to_db(self, conn, kind=None, verbose=True):
@@ -187,25 +219,14 @@ class Activity(object):
             self._processed_data_to_db(conn, verbose)
 
 
-    def _processed_data_from_db(self, conn):
+    def _raw_data_to_db(self):
         '''
-        Load the activity's most recent processed data from a database into self._processed_data
+        Insert/update an activity's raw data in a cypy2 database
+        Currently only defined in the LocalActivity subclass, since the raw data should be static
+        (that is, an activity loaded from a database should not be able to update its own raw data)
 
         '''
-        
-        query = sql.SQL(
-            'select * from proc_records where activity_id = {} order by date_created desc limit 1')
-        query = query.format(sql.Literal(self.metadata.activity_id)).as_string(conn)
-
-        records = pd.DataFrame(pd.read_sql(query, conn).to_dict(orient='records').pop())
-        records.drop(
-            ['activity_id', 'date_created', 'date_modified', 'commit_hash', 'geom'], 
-            axis=1, 
-            inplace=True)
-
-        records.dropna(axis=1, how='all', inplace=True)
-
-        self._processed_data = {'events': None, 'summary': None, 'records': records}
+        raise NotImplementedError('_raw_data_to_db must be defined in subclasses')
 
 
     def _processed_data_to_db(self, conn, verbose):

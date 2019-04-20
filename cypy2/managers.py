@@ -42,10 +42,15 @@ class ActivityManager(object):
 
 
     @classmethod
-    def from_db(cls, conn, kind='metadata'):
+    def from_db(cls, conn, kind=None):
         '''
         load all activities from a cypy2 database
-        
+
+        Parameters
+        ----------
+        kind : None, 'raw', 'processed', or 'all';
+            if None, only activity metadata is loaded
+
         '''
 
         # all activity_ids in the database
