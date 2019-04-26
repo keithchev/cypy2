@@ -17,10 +17,9 @@ from cypy2.activity import (Activity, LocalActivity)
 
 class ActivityManager(object):
 
-    def __init__(self, activities):
+    def __init__(self, metadata):
 
-        self._metadata = pd.DataFrame([a.metadata for a in activities])
-        self._activities = activities
+        self._metadata = metadata
 
 
     @classmethod
@@ -29,8 +28,8 @@ class ActivityManager(object):
         activities = []
         for ind, data in enumerate(strava_export_manager.parsed_data):
             try:
-                sys.stdout.write('\r%s' % activity.metadata.activity_id)
                 activity = LocalActivity.from_strava_export(data)
+                sys.stdout.write('\r%s' % activity.metadata.activity_id)
                 activities.append(activity)
             except Exception as err:
                 if raise_errors:
@@ -38,13 +37,16 @@ class ActivityManager(object):
                 else:
                     print('Warning: error parsing data at index %s:\n%s' % (ind, err))
 
-        return cls(activities)
+        metadata = pd.DataFrame([a.metadata for a in activities])
+        metadata['activity'] = activities
+        return cls(metadata)
 
 
     @classmethod
     def from_db(cls, conn, kind=None):
         '''
-        load all activities from a cypy2 database
+        Load activity metadata from a cypy2 database, 
+        and instantiate activities (if kind='raw' or kind='processed')
 
         Parameters
         ----------
@@ -53,19 +55,26 @@ class ActivityManager(object):
 
         '''
 
-        # all activity_ids in the database
-        activity_ids = dbutils.get_rows(conn, 'metadata', column='activity_id').values.flatten()
+        metadata = dbutils.get_rows(conn, 'metadata')
 
-        activities = []
-        for activity_id in activity_ids:
-            sys.stdout.write('\r%s' % activity_id)
-            try:
-                activity = Activity.from_db(conn, activity_id, kind=kind)
-                activities.append(activity)
-            except Exception as error:
-                print('Error loading activity_id %s:\n%s' % (activity_id, error))
+        metadata['activity'] = None
+        for ind, row in metadata.iterrows():
 
-        return cls(activities)
+            # attempt to load the activity's data
+            if kind is not None:
+                sys.stdout.write('\r%s' % row.activity_id)
+                try:
+                    activity = Activity.from_db(conn, row.activity_id, kind=kind)
+                except Exception as error:
+                    print('Error loading activity_id %s:\n%s' % (row.activity_id, error))
+
+            # instantiate from the metadata alone
+            else:
+                activity = Activity(row)
+
+            metadata.at[ind, 'activity'] = activity
+
+        return cls(metadata)
 
 
     def activities(self, activity_id=None, func=None, **kwargs):
@@ -73,16 +82,13 @@ class ActivityManager(object):
         Filter activities
         '''
 
-        _activities = self._activities
+        metadata = self.metadata(activity_id, **kwargs)
+        activities = metadata.activity.values
+
         if func:
-            _activities = [a for a in _activities if func(a)]
+            activities = [a for a in activities if func(a)]
 
-        if activity_id:
-            _activities = [a for a in _activities if a.metadata['activity_id'].startswith(activity_id)]
-
-        for key, val in kwargs.items():
-            _activities = [a for a in _activities if a.metadata[key]==val]
-        return _activities
+        return list(activities)
 
 
     def metadata(self, activity_id=None, **kwargs):
@@ -92,7 +98,7 @@ class ActivityManager(object):
 
         metadata = self._metadata.copy()
         if activity_id:
-            metadata = metadata.loc[metadata.activity_id.apply(str.startswith(activity_id))]
+            metadata = metadata.loc[metadata.activity_id.apply(lambda s: s.startswith(activity_id))]
 
         for key, val in kwargs.items():
             if key in metadata.columns:
