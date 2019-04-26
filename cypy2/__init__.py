@@ -2,7 +2,7 @@
 try:
     import dbutils
 except ModuleNotFoundError:
-    sys.path.append('../../../_projects-gh/dbutils/')
+    sys.path.append('../../../projects-gh/dbutils/')
     import dbutils
 
 from cypy2 import (
