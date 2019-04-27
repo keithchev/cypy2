@@ -461,7 +461,8 @@ class Activity(object):
 
         # interpolate each column with the new timepoints
         for column in set(records.columns).difference(['elapsed_time']):
-            values, mask = records[column].values, records[column].isna().values
+            values = records[column].values
+            mask = utils.mask_internal_nans(values)
             interpolator = interpolate.interp1d(timepoints, values, kind='linear')
             new_records[column] = interpolator(new_timepoints)
 

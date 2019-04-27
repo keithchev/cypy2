@@ -1,2 +1,1 @@
-from cypy2.utils.sliding_window import sliding_window
-from cypy2.utils.weighted_linregress import weighted_linregress
+from cypy2.utils.utils import *

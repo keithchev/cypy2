@@ -1,18 +1,28 @@
-'''
-
-Pure numpy implementation of a method to chop an array into windows
-
-**This method was copied directly from the gist below**
-https://gist.github.com/nils-werner/9d321441006b112a4b116a8387c2280c
-
-'''
-
 
 import numpy
+import pandas as pd
+
+
+def mask_internal_nans(values):
+    '''
+
+    '''
+
+    mask = pd.isna(values)
+
+    return mask
 
 
 def sliding_window(data, size, stepsize=1, padded=False, axis=-1, copy=True):
     """
+    ---------------------------------------------------------------------------
+    Pure numpy implementation of a method to chop an array into windows
+
+    **This method was copied directly from the gist below**
+    https://gist.github.com/nils-werner/9d321441006b112a4b116a8387c2280c
+    ---------------------------------------------------------------------------
+
+
     Calculate a sliding window over a signal
 
     Parameters
@@ -90,3 +100,32 @@ def sliding_window(data, size, stepsize=1, padded=False, axis=-1, copy=True):
         return strided.copy()
     else:
         return strided
+
+
+def weighted_linregress(x, y, w):
+    '''
+    Direct (numpy) implementation of one-dimensional weighted linear regression 
+
+    Parameters
+    ----------
+    x : 1xN array of x values
+    y : 1xN array of y values
+    w : 1xN array of weights; assumed to sum to one
+    
+    Returns
+    -------
+    The slope, offset, and RMSE (mean of the squared residuals)
+
+    '''
+
+    X = np.concatenate((np.ones((len(x), 1)), x[:, None]), axis=1)
+    Xt = X.transpose()
+    Y = y[:, None]
+    W = np.diag(w)
+
+    XtW = Xt.dot(W)
+    beta = np.linalg.inv(XtW.dot(X)).dot(XtW).dot(Y)
+
+    offset, slope = beta.flatten()
+    res = np.mean((y - (x * slope + offset))**2)**.5
+    return slope, offset, res
