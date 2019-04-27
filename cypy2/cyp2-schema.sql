@@ -41,6 +41,9 @@ CREATE DATABASE :dbname
 SET search_path = public, pg_catalog;
 SET default_tablespace = '';
 
+CREATE EXTENSION postgis;
+CREATE EXTENSION postgis_topology;
+
 CREATE TYPE ACTIVITY_TYPE AS ENUM (
     'ride', 
     'run', 
@@ -170,11 +173,17 @@ CREATE TABLE proc_records (
     activity_id     char(14), 
     date_created    timestamptz DEFAULT now(),
     date_modified   timestamptz DEFAULT NULL,
-    commit_hash     char(40) NOT NULL, -- git commit when the row was created 
+
+     -- git commit when the row was created 
+    commit_hash     char(40) NOT NULL,
+
+    -- 2D and 4D GPS trajectories (4D includes elapsed_time and altitude)
+    geom            geometry(LineString, 4326),
+    geom4d          geometry(LineStringZM, 4326),
 
     elapsed_time    int[],
-    lat             real[],   -- decimal degrees 
-    lon             real[],   -- decimal degrees
+    lat             numeric(9, 6)[],   -- decimal degrees 
+    lon             numeric(9, 6)[],   -- decimal degrees
     distance        real[],   -- meters
     altitude        real[],   -- meters
     grade           real[],   -- percent
