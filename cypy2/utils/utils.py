@@ -1,5 +1,5 @@
 
-import numpy
+import numpy as np
 import pandas as pd
 
 
@@ -9,6 +9,16 @@ def mask_internal_nans(values):
     '''
 
     mask = pd.isna(values)
+
+    def _drop_leading(mask):
+        ind = 0
+        while mask[ind]:
+            mask[ind] = False
+            ind += 1
+        return mask
+
+    mask = _drop_leading(mask)
+    mask = _drop_leading(mask[::-1])[::-1]
 
     return mask
 
@@ -85,14 +95,14 @@ def sliding_window(data, size, stepsize=1, padded=False, axis=-1, copy=True):
         )
 
     shape = list(data.shape)
-    shape[axis] = numpy.floor(data.shape[axis] / stepsize - size / stepsize + 1).astype(int)
+    shape[axis] = np.floor(data.shape[axis] / stepsize - size / stepsize + 1).astype(int)
     shape.append(size)
 
     strides = list(data.strides)
     strides[axis] *= stepsize
     strides.append(data.strides[axis])
 
-    strided = numpy.lib.stride_tricks.as_strided(
+    strided = np.lib.stride_tricks.as_strided(
         data, shape=shape, strides=strides
     )
 
@@ -104,7 +114,7 @@ def sliding_window(data, size, stepsize=1, padded=False, axis=-1, copy=True):
 
 def weighted_linregress(x, y, w):
     '''
-    Direct (numpy) implementation of one-dimensional weighted linear regression 
+    Direct implementation of one-dimensional weighted linear regression 
 
     Parameters
     ----------

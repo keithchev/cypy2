@@ -20,3 +20,9 @@ select activity_id, activity_type from (
 	from metadata) md
 where r = n
 
+-- the nth most-recent processed records for a given activity
+select * from (
+	select *, row_number() over (order by date_created desc) as n
+	from proc_records where activity_id = '20180923163103'
+) temp where n = n
+

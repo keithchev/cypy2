@@ -179,9 +179,10 @@ class Activity(object):
         
         query = sql.SQL(
             'select * from proc_records where activity_id = {} order by date_created desc limit 1')
-        query = query.format(sql.Literal(self.metadata.activity_id)).as_string(conn)
 
-        records = pd.DataFrame(pd.read_sql(query, conn).to_dict(orient='records').pop())
+        query = query.format(sql.Literal(self.metadata.activity_id))
+        records = pd.DataFrame(pd.read_sql(query.as_string(conn), conn).to_dict(orient='records').pop())
+
         records.drop(
             ['activity_id', 'date_created', 'date_modified', 'commit_hash', 'geom'], 
             axis=1, 
@@ -463,7 +464,7 @@ class Activity(object):
         for column in set(records.columns).difference(['elapsed_time']):
             values = records[column].values
             mask = utils.mask_internal_nans(values)
-            interpolator = interpolate.interp1d(timepoints, values, kind='linear')
+            interpolator = interpolate.interp1d(timepoints[~mask], values[~mask], kind='linear')
             new_records[column] = interpolator(new_timepoints)
 
         return new_records
