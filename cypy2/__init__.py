@@ -6,10 +6,11 @@ except ModuleNotFoundError:
     import dbutils
 
 from cypy2 import (
+	strava,
 	utils,
 	file_utils,
-	file_settings
+	file_settings,
 )
 
+from cypy2.managers import ActivityManager
 from cypy2.activity import (Activity, LocalActivity)
-from cypy2.managers import (ActivityManager, StravaExportManager)

@@ -771,33 +771,11 @@ class LocalActivity(Activity):
     def from_fit_file(cls, filepath):
         '''
         Initialize an activity directly from a FIT file
-    
         **intended for testing only**
-        (note that there is no strava_metadata)
-        
-        Parameters
-        filepath : path to a local FIT file
-
         '''
-        
         data = file_utils.parse_fit(filepath)
         activity = cls(data)
         return activity
-
-
-    @classmethod
-    def from_strava_export(cls, data):
-        '''
-        Initialize an activity from the parsed data cached by managers.StravaExportManager
-        
-        Parameters
-        ----------
-        data : dict of message dataframes; usually, this corresponds to one element 
-        of the list returned by StravaExportManager.parse_all
-        '''
-        activity = cls(data, strava_metadata=data['strava_metadata'])
-        return activity
-
 
 
     def _raw_data_to_db(self, conn, verbose):
@@ -818,7 +796,6 @@ class LocalActivity(Activity):
         #  metadata
         #
         # ------------------------------------------------------------------------------------
-
         # metadata as a (one-row) DataFrame so we can use dbutils.dataframe_to_table
         # TODO: decide how to handle database errors
         metadata = pd.DataFrame(data=[self.metadata])
