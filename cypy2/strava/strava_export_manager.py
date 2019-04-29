@@ -12,6 +12,22 @@ from cypy2 import (file_utils, file_settings)
 
 
 class StravaExportManager(object):
+    '''
+    Methods to organize and parse the FIT files in a Strava data export
+
+    Currently (as of April 2019), Strava data exports include original FIT files for each activity;
+    these appear in the activities/ subdirectory, with corresponding metadata in activities.csv.
+    
+    Note that this organization is hard-coded in the methods below;
+    if the organization of the exports changes, these methods will need to be updated.
+ 
+    Parameters
+    ----------
+    root_dirpath : path to the strava export directory
+    from_cache : whether to load previously-parsed FIT-file data from a cache
+                 (created by self.to_cache)
+
+    '''
 
     def __init__(self, root_dirpath, from_cache=False):
         
@@ -23,8 +39,9 @@ class StravaExportManager(object):
             os.getenv('HOME'), 
             'parsed-strava-exports', 
             self.root_dirname)
-
         os.makedirs(self.cache_dirpath, exist_ok=True)
+
+        # load the CSV activity metadata
         self.metadata = pd.read_csv(os.path.join(self.root_dirpath, 'activities.csv'))
 
         if from_cache:
@@ -52,7 +69,9 @@ class StravaExportManager(object):
 
     def parse_all(self):
         '''
-        Parse all of the FIT files appearing in the Strava export
+        Parse all of the FIT files that appear in the Strava export's activity metadata
+
+        **Note that this method ignores activities in other formats (e.g., GPX format)**
 
         Returns
         -------
