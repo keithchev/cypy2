@@ -26,3 +26,7 @@ select * from (
 	from proc_records where activity_id = '20180923163103'
 ) temp where n = n
 
+
+-- bounding box of all geometries in a table
+select ST_SetSRID(ST_Envelope(ST_Collect(geom)), 4326), 'id' as id from roads
+group by id

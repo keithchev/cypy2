@@ -6,7 +6,6 @@ import gzip
 import numpy as np
 import pandas as pd
 
-from lxml import etree
 from fitparse import FitFile
 from datetime import datetime
 
