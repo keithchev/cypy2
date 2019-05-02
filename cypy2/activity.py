@@ -321,7 +321,8 @@ class Activity(object):
             print('Warning: all lat/lon coords for activity %s are missing' % activity_id)
             return
 
-        # GeoJSON of the four-dimensional geometry with elevation and timestamp
+        # construct the GeoJSON for the full four-dimensional LINESTRINGZM geometry 
+        # (i.e., with elevation (Z) and timestamp (M))
         geom = {
             'type': 'LineString',
             'coordinates': coordinates.values.tolist()
@@ -344,7 +345,7 @@ class Activity(object):
 
         for query in [query_2d, query_4d]:
             full_query = sql.SQL(' ').join([query, dbutils.where_clause(selector)])
-            dbutils.execute_query(conn, full_query, (value,), commit=True)
+            dbutils.execute_query(conn, full_query, value, commit=True)
 
 
     def process_records(self):

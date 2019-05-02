@@ -1,4 +1,6 @@
 
+import sys
+
 try:
     import dbutils
 except ModuleNotFoundError:

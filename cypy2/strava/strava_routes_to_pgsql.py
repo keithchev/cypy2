@@ -27,7 +27,7 @@ def _gpx2pgsql(dbname, filename):
         universal_newlines=True)
 
 
-def insert_routes(conn, dbname, gpx_filenames):
+def insert_routes(conn, gpx_filenames):
     '''
     Create a database of Strava routes from the GPX files found in Strava exports
     (in the 'routes/' directory)
@@ -52,21 +52,21 @@ def insert_routes(conn, dbname, gpx_filenames):
     '''
 
     # drop existing tables
-    dbutils.execute_query(conn, 'drop table if exists tracks')
-    dbutils.execute_query(conn, 'drop table if exists track_points')
+    dbutils.execute_query('drop table if exists tracks', conn)
+    dbutils.execute_query('drop table if exists track_points', conn)
     conn.commit()
 
     # insert the first GPX file to create the schema
-    _gpx2pgsql(dbname, gpx_filenames[0])
+    _gpx2pgsql(conn.info.dbname, gpx_filenames[0])
     
     # remove all rows
-    dbutils.truncate_table(conn, 'tracks', for_real=True)
-    dbutils.truncate_table(conn, 'track_points', for_real=True)
+    dbutils.truncate_table('tracks', conn, for_real=True)
+    dbutils.truncate_table('track_points', conn, for_real=True)
 
     # add a date_created column to the 'tracks' table
     dbutils.execute_query(
-        conn, 
         'alter table tracks add column date_created timestamptz default now();',
+        conn,
         raise_errors=False)
 
     conn.commit()
@@ -78,26 +78,34 @@ def insert_routes(conn, dbname, gpx_filenames):
         # step 1: insert the GPX file using ogr2ogr
         # this inserts one row into the 'tracks' table,
         # and a row for each point (lat/lon coord) into the 'track_points' table
-        _gpx2pgsql(dbname, filename)
+        _gpx2pgsql(conn.info.dbname, filename)
 
         # step 2: get the ogc_id of the track we just inserted
-        track_ogc_fid = dbutils.execute_query(
-            conn, 
-            'select ogc_fid from tracks order by date_created desc limit 1;')[0][0]
+        row = dbutils.execute_query(
+            'select ogc_fid from tracks order by date_created desc limit 1;',
+            conn)
+        track_ogc_fid = row[0][0]
 
-        # step 3: set the track_fid of the new rows in 'track_points' to the ogc_id of the new row in 'tracks'
+        # step 3: set the track_fid of the new rows in 'track_points' 
+        # to the ogc_id of the new row in 'tracks'
         # (ogr2ogr itself always sets track_points.track_fid to zero)
         # ***note that this assumes that tracks.ogc_id is never zero***
-        dbutils.update_value(conn, 'track_points', 'track_fid', track_ogc_fid, {'track_fid': 0}, only_one=False)
+        dbutils.update_value(
+            conn, 
+            table='track_points', 
+            column='track_fid',
+            value=track_ogc_fid, 
+            selector={'track_fid': 0}, 
+            only_one=False)
 
     # column renaming
-    dbutils.execute_query(conn, 'alter table tracks rename ogc_fid to track_id;')
-    dbutils.execute_query(conn, 'alter table tracks rename wkb_geometry to geom;')
+    dbutils.execute_query('alter table tracks rename ogc_fid to track_id;', conn)
+    dbutils.execute_query('alter table tracks rename wkb_geometry to geom;', conn)
 
-    dbutils.execute_query(conn, 'alter table track_points rename ele to elevation;')
-    dbutils.execute_query(conn, 'alter table track_points rename wkb_geometry to geom;')
-    dbutils.execute_query(conn, 'alter table track_points rename track_fid to track_id;')
-    dbutils.execute_query(conn, 'alter table track_points rename track_seg_point_id to point_order;')
+    dbutils.execute_query('alter table track_points rename ele to elevation;', conn)
+    dbutils.execute_query('alter table track_points rename wkb_geometry to geom;', conn)
+    dbutils.execute_query('alter table track_points rename track_fid to track_id;', conn)
+    dbutils.execute_query('alter table track_points rename track_seg_point_id to point_order;', conn)
     conn.commit()
 
     # columns to retain
@@ -112,5 +120,6 @@ def insert_routes(conn, dbname, gpx_filenames):
             if column not in columns[table]:
                 print('Dropping column %s from table %s' % (column, table))
                 dbutils.execute_query(
-                    conn, 
-                    'alter table %s drop column "%s"' % (table, column), commit=True)
+                    'alter table %s drop column "%s"' % (table, column),
+                    conn,
+                    commit=True)

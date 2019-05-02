@@ -30,3 +30,10 @@ select * from (
 -- bounding box of all geometries in a table
 select ST_SetSRID(ST_Envelope(ST_Collect(geom)), 4326), 'id' as id from roads
 group by id
+
+-- major/minor OSM roads (codes 5110 - 5130) in a bounding box
+SELECT 'id' as id, ST_Collect(ST_Simplify(geom, .0001)) FROM roads 
+    WHERE name is not null and code < 5130 and
+	ST_Intersects(
+        ST_MakeEnvelope(-123.31, 38.4, -122.94, 38.62, 4326), geom)
+group by id
