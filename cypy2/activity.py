@@ -19,7 +19,13 @@ from psycopg2 import sql
 from scipy import interpolate
 from matplotlib import pyplot as plt
 
-from cypy2 import (utils, constants, file_utils, file_settings, constants, dbutils)
+from cypy2 import (
+    utils, 
+    constants, 
+    file_utils, 
+    file_settings, 
+    constants, 
+    dbutils)
 
 
 class Activity(object):
@@ -449,9 +455,6 @@ class Activity(object):
 
         Note that this is not always necessary, since for many activities,
         the sampling rate is already constant (i.e., not variable/dynamic) 
-
-        TODO: drop *internal* NAs prior to interpolating
-              (but retain initial or trailing NAs)
 
         '''
 

@@ -4,7 +4,7 @@ import sys
 try:
     import dbutils
 except ModuleNotFoundError:
-    sys.path.append('../../../projects-gh/dbutils/')
+    sys.path.append('/home/keith/Dropbox/projects-gh/dbutils/')
     import dbutils
 
 from cypy2 import (
