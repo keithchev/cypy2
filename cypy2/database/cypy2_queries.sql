@@ -28,15 +28,8 @@ select * from (
 
 
 -- bounding box of all geometries in a table
-select ST_SetSRID(ST_Envelope(ST_Collect(geom)), 4326), 'id' as id from roads
-group by id
+select ST_Envelope(ST_Collect(geom)) from roads
 
--- major/minor OSM roads (codes 5110 - 5130) in a bounding box
-SELECT 'id' as id, ST_Collect(ST_Simplify(geom, .0001)) FROM roads 
-    WHERE name is not null and code < 5130 and
-	ST_Intersects(
-        ST_MakeEnvelope(-123.31, 38.4, -122.94, 38.62, 4326), geom)
-group by id
 
 -- extract points and order from a linestring
 -- (note that ST_DumpPoints returns a set)
@@ -46,15 +39,17 @@ select name, path, ST_AsText(geom) from (
 
 
 -- find all intersections between OSM roads
+-- (ST_Union eliminates duplicate points)
 with cropped_roads as (
 	select name, geom from roads
-	WHERE name is not null and code < 5130 and
-	ST_Contains(ST_MakeEnvelope(-123.1, 38.4, -122.9, 38.5, 4326), geom)
+	WHERE name is not null and code < 5130
+	and ST_Intersects(ST_MakeEnvelope(-122.3, 37.86, -122.15, 37.88, 4326), geom)
 )
-select ST_Collect(geom) from (
+select ST_union(geom) from (
 	select ST_Intersection(a.geom, b.geom) geom
 	from cropped_roads a, cropped_roads b
-	where a.name != b.name and ST_Intersects(a.geom, b.geom)) as ints
+	where a.name != b.name 
+	and ST_Intersects(a.geom, b.geom)) as ints
 
 
 -- count segments of roads in berkeley
@@ -62,6 +57,7 @@ select name, count(name) from roads
 where ST_Intersects(ST_MakeEnvelope(-122.3, 37.86, -122.15, 37.923, 4326), geom)
 group by name
 order by count desc
+
 
 -- straighforward way to merge all segments of the same road in an ROI
 select name, ST_LineMerge(ST_Union(geom)) from (
