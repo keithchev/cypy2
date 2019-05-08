@@ -217,7 +217,7 @@ class Activity(object):
 
         if kind=='raw':
             if self.source=='local':
-                self._raw_data_to_db(conn, verbose)
+                self._raw_data_to_db(conn)
             else:
                 raise ValueError(
                     'Cannot insert raw data unless the activity was loaded from a local file')
@@ -226,7 +226,7 @@ class Activity(object):
             self._processed_data_to_db(conn, verbose)
 
 
-    def _raw_data_to_db(self):
+    def _raw_data_to_db(self, conn):
         '''
         Insert/update an activity's raw data in a cypy2 database
         Currently only defined in the LocalActivity subclass, since the raw data should be static
@@ -785,7 +785,7 @@ class LocalActivity(Activity):
         return activity
 
 
-    def _raw_data_to_db(self, conn, verbose):
+    def _raw_data_to_db(self, conn, kinds=None):
         '''
         Insert or update an activity's *raw* data in a cypy2 database
 
@@ -805,13 +805,14 @@ class LocalActivity(Activity):
         # ------------------------------------------------------------------------------------
         # metadata as a (one-row) DataFrame so we can use dbutils.dataframe_to_table
         # TODO: decide how to handle database errors
-        metadata = pd.DataFrame(data=[self.metadata])
-        try:
-            dbutils.dataframe_to_table(conn, 'metadata', metadata, raise_errors=True)
-            conn.commit()
-        except psycopg2.Error as error:
-            print('Error inserting metadata: %s' % error)
-            return
+        if kinds is None or 'metadata' in kinds:
+            metadata = pd.DataFrame(data=[self.metadata])
+            try:
+                dbutils.dataframe_to_table(conn, 'metadata', metadata, raise_errors=True)
+                conn.commit()
+            except psycopg2.Error as error:
+                print('Error inserting metadata: %s' % error)
+                return
 
 
         # ------------------------------------------------------------------------------------
@@ -819,48 +820,52 @@ class LocalActivity(Activity):
         #  events
         #
         # ------------------------------------------------------------------------------------
-        events = self.events(kind='raw')
-        dbutils.dataframe_to_table(conn, 'raw_events', events, raise_errors=True)
-        conn.commit()
+        if kinds is None or 'events' in kinds:
+            events = self.events(kind='raw')
+            dbutils.dataframe_to_table(conn, 'raw_events', events, raise_errors=True)
+            conn.commit()
 
         # ------------------------------------------------------------------------------------
         #
         #  summary
         #
         # ------------------------------------------------------------------------------------
-        # device summary (i.e., the 'session' message)
-        summary = self.summary(kind='raw')
+        if kinds is None or 'summary' in kinds:
 
-        # drop columns that aren't in the raw_summary table
-        db_columns = dbutils.get_column_names(conn, 'raw_summary')
-        summary = summary[list(set(summary.columns).intersection(db_columns))]
+            # the raw summary is directly from the FIT file 'session' message
+            summary = self.summary(kind='raw')
 
-        dbutils.dataframe_to_table(conn, 'raw_summary', summary, raise_errors=True)
-        conn.commit()
+            # drop columns that aren't in the raw_summary table
+            db_columns = dbutils.get_column_names(conn, 'raw_summary')
+            summary = summary[list(set(summary.columns).intersection(db_columns))]
+
+            dbutils.dataframe_to_table(conn, 'raw_summary', summary, raise_errors=False)
+            conn.commit()
 
         # ------------------------------------------------------------------------------------
         #
         #  records
         #
         # ------------------------------------------------------------------------------------
-        # create a new row in raw_records for this activity
-        dbutils.insert_row(conn, 'raw_records', {'activity_id': activity_id})
-        conn.commit()
+        if kinds is None or 'records' in kinds:
+            records = self.records(kind='raw')
 
-        records = self.records(kind='raw')
+            # create a new row in raw_records for this activity
+            dbutils.insert_row(conn, 'raw_records', {'activity_id': activity_id})
+            conn.commit()
 
-        # note that update_value will overwrite any existing values
-        columns = dbutils.get_column_names(conn, 'raw_records')
-        for column in columns:
-            if column in records.columns:
-                dbutils.update_value(
-                    conn,
-                    table='raw_records', 
-                    column=column,
-                    value=records[column], 
-                    selector={'activity_id': activity_id})
+            # note that update_value will overwrite any existing values
+            columns = dbutils.get_column_names(conn, 'raw_records')
+            for column in columns:
+                if column in records.columns:
+                    dbutils.update_value(
+                        conn,
+                        table='raw_records', 
+                        column=column,
+                        value=records[column], 
+                        selector={'activity_id': activity_id})
 
-        conn.commit()
+            conn.commit()
 
 
     @staticmethod
@@ -1109,7 +1114,7 @@ class LocalActivity(Activity):
 
         # for now, keep only the event_type and time columns for 'timer' events 
         # (which are the starts and stops)
-        events = events.loc[events.event=='timer'][['event_type', 'timestamp']]
+        events = events.loc[events.event=='timer'][['event_type', 'event_time']]
 
         # 'stop_all' to 'stop', etc
         events.replace(to_replace=re.compile('stop(.*)$'), value='stop', inplace=True)

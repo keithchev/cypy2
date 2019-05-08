@@ -61,6 +61,8 @@ class ActivityManager(object):
         '''
 
         metadata = dbutils.get_rows(conn, 'metadata')
+        summary = dbutils.get_rows(conn, 'raw_summary')
+        metadata = pd.merge(metadata, summary, how='inner', on='activity_id')
 
         metadata['activity'] = None
         for ind, row in metadata.iterrows():
