@@ -86,3 +86,11 @@ select name, ST_LineMerge(ST_Union(geom)) from (
 ) as ints
 group by name
 order by name
+
+-- top-n closest trajectories to a given point
+select activity_id, ST_Simplify(geom, .001), ST_DistanceSphere(
+	ST_Simplify(geom, .001), 
+	ST_SetSRID(ST_MakePoint(-122.143941, 37.858682), 4326)) dist
+from proc_records
+order by dist
+limit 10;

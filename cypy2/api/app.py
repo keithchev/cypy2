@@ -40,6 +40,13 @@ def _is_activity_id(activity_id):
     return activity_id in manager.metadata().activity_id.values
 
 
+def metadata_to_json(metadata):
+    if 'activity' in metadata.columns:
+        metadata.drop('activity', axis=1, inplace=True)
+    data = json.loads(metadata.to_json(orient='records', date_format='iso'))
+    return data
+
+
 @app.route('/')
 def home():
     return flask.render_template('index.html')
@@ -48,11 +55,9 @@ def home():
 @app.route('/metadata/<activity_id>')
 def metadata(activity_id):
     '''
-
     '''
     metadata = manager.metadata(activity_id=str(activity_id))
-    metadata.drop('activity', axis=1, inplace=True)
-    return flask.jsonify(json.loads(metadata.to_json(orient='records', date_format='iso')))
+    return flask.jsonify(metadata_to_json(metadata))
 
 
 @app.route('/records/<activity_id>')
@@ -97,12 +102,36 @@ def trajectory(activity_id):
 
     query = sql.SQL(
         'select ST_AsGeoJSON(ST_Simplify(geom, {tolerance})) from proc_records')
+
     query = sql.SQL(' ').join([
         query.format(tolerance=sql.SQL(tolerance)), 
         dbutils.where_clause({'activity_id': activity_id})])
 
     data = dbutils.execute_query(conn, query)[0][0]
     return flask.jsonify(json.loads(data))
+
+
+@app.route('/near/<lat>/<lon>')
+def near(lat, lon):
+    '''
+    Return the metadata for all activities within 50 meters of the (lat, lon) point
+    (Note that ST_DistanceSphere returns distances in meters when coords are lat/lon)
+    '''
+
+    query = '''
+        select activity_id from(
+        select activity_id, ST_DistanceSphere(
+            ST_Simplify(geom, .001), 
+            ST_SetSRID(ST_MakePoint(%s, %s), 4326)) dist
+        from proc_records order by dist) tmp
+        where dist < 50;'''
+
+    data = dbutils.execute_query(conn, query, (lon, lat))
+    activity_ids = [row[0] for row in data]    
+
+    metadata = manager.metadata()
+    metadata = metadata.loc[metadata.activity_id.isin(activity_ids)]
+    return flask.jsonify(metadata_to_json(metadata))
 
 
 if __name__=='__main__':
