@@ -583,7 +583,10 @@ class Activity(object):
         '''
         Summary statistics
         '''
-        return None
+        if kind=='raw':
+            return self._raw_data['summary'].copy()
+        else:
+            raise NotImplementedError
 
 
     def events(self, kind='raw'):
@@ -817,9 +820,8 @@ class LocalActivity(Activity):
         #
         # ------------------------------------------------------------------------------------
         events = self.events(kind='raw')
-        dbutils.dataframe_to_table(conn, 'raw_events', events, raise_errors=False)
+        dbutils.dataframe_to_table(conn, 'raw_events', events, raise_errors=True)
         conn.commit()
-
 
         # ------------------------------------------------------------------------------------
         #
@@ -827,8 +829,14 @@ class LocalActivity(Activity):
         #
         # ------------------------------------------------------------------------------------
         # device summary (i.e., the 'session' message)
-        # summary = self.summary(kind='raw')
+        summary = self.summary(kind='raw')
 
+        # drop columns that aren't in the raw_summary table
+        db_columns = dbutils.get_column_names(conn, 'raw_summary')
+        summary = summary[list(set(summary.columns).intersection(db_columns))]
+
+        dbutils.dataframe_to_table(conn, 'raw_summary', summary, raise_errors=True)
+        conn.commit()
 
         # ------------------------------------------------------------------------------------
         #
@@ -1087,20 +1095,21 @@ class LocalActivity(Activity):
         TODO: parse/cleanup summary and records
 
         '''
+
         events = fit_data['event'].copy()
         summary = fit_data['session'].copy()
         records = fit_data['record'].copy()
 
-        # column renaming
-        records.rename(columns={'timestamp': 'timepoint'}, inplace=True)
-
-        # for now, keep only the event_type and time columns for 'timer' events (starts and stops)
-        events = events.loc[events.event=='timer'][['event_type', 'timestamp']]
-
-        # column names for database
-        events = events.rename(columns={'timestamp': 'event_time'})
-
         events['activity_id'] = activity_id
+        summary['activity_id'] = activity_id
+    
+        # column renaming for the database
+        records.rename(columns={'timestamp': 'timepoint'}, inplace=True)
+        events.rename(columns={'timestamp': 'event_time'}, inplace=True)
+
+        # for now, keep only the event_type and time columns for 'timer' events 
+        # (which are the starts and stops)
+        events = events.loc[events.event=='timer'][['event_type', 'timestamp']]
 
         # 'stop_all' to 'stop', etc
         events.replace(to_replace=re.compile('stop(.*)$'), value='stop', inplace=True)
