@@ -183,17 +183,21 @@ class Activity(object):
 
         '''
         
-        query = sql.SQL(
-            'select * from proc_records where activity_id = {} order by date_created desc limit 1')
+        query = sql.SQL('''
+            select * from proc_records where activity_id = {} 
+            order by date_created desc limit 1''')
 
         query = query.format(sql.Literal(self.metadata.activity_id))
-        records = pd.DataFrame(pd.read_sql(query.as_string(conn), conn).to_dict(orient='records').pop())
+        data = pd.read_sql(query.as_string(conn), conn)
 
-        records.drop(
-            ['activity_id', 'date_created', 'date_modified', 'commit_hash', 'geom'], 
-            axis=1, 
-            inplace=True)
-
+        # drop all of the non-array-type columns
+        columns = [
+            'activity_id', 'commit_hash', 
+            'date_created', 'date_modified', 
+            'geom', 'geom4d']
+    
+        data.drop(columns, axis=1, inplace=True)
+        records = pd.DataFrame(data.to_dict(orient='records').pop())
         records.dropna(axis=1, how='all', inplace=True)
 
         processed_data = {'events': None, 'summary': None, 'records': records}

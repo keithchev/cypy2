@@ -71,7 +71,12 @@ def records(activity_id):
 
     activity = cypy2.Activity.from_db(conn, activity_id)
     activity.load(conn, kind='processed')
-    records = activity.records('proc')
+    records = activity.records('processed')
+
+    # sampling rate in seconds
+    sampling = int(request.args.get('sampling'))
+    if not sampling:
+        sampling = 10
 
     columns = request.args.get('columns')
     if columns:
@@ -79,10 +84,11 @@ def records(activity_id):
     else:
         columns = list(records.columns)
 
-    data = {
-        'columns': columns,
-        'values': json.loads(records[columns].head().to_json(orient='values')),
-    }
+    data = []
+    for column in columns:
+        if column not in records.columns or column in ['geom', 'geom4d']:
+            continue
+        data.append({column: records[column].iloc[::sampling].tolist()})
     
     return flask.jsonify(data)
 
