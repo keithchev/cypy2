@@ -119,19 +119,21 @@ def near(lat, lon):
     '''
 
     query = '''
-        select activity_id from(
+        select activity_id, dist from(
         select activity_id, ST_DistanceSphere(
             ST_Simplify(geom, .001), 
             ST_SetSRID(ST_MakePoint(%s, %s), 4326)) dist
-        from proc_records order by dist) tmp
-        where dist < 50;'''
+        from proc_records order by dist) tmp;'''
 
-    data = dbutils.execute_query(conn, query, (lon, lat))
-    activity_ids = [row[0] for row in data]    
+    data = []
+    result = dbutils.execute_query(conn, query, (lon, lat))
+    for row in result:
+        activity_id, proximity = row
+        if proximity is not None:
+            proximity *= cypy2.constants.miles_per_meter
+        data.append({'activity_id': activity_id, 'proximity': proximity})
 
-    metadata = manager.metadata()
-    metadata = metadata.loc[metadata.activity_id.isin(activity_ids)]
-    return flask.jsonify(metadata_to_json(metadata))
+    return flask.jsonify(data)
 
 
 if __name__=='__main__':
