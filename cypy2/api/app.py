@@ -66,6 +66,9 @@ def records(activity_id):
     One or more record columns for one activity (e.g., power, heart rate, etc)
     '''
 
+    def _nan_to_none(iterable):
+        return [None if pd.isna(val) else val for val in iterable]
+
     if not _is_activity_id(activity_id):
         return flask.jsonify(dict())
 
@@ -84,12 +87,12 @@ def records(activity_id):
     else:
         columns = list(records.columns)
 
-    data = []
+    data = {}
     for column in columns:
         if column not in records.columns or column in ['geom', 'geom4d']:
             continue
-        data.append({column: records[column].iloc[::sampling].tolist()})
-    
+        data[column] = _nan_to_none(records[column].iloc[::sampling])
+ 
     return flask.jsonify(data)
 
     
