@@ -134,10 +134,7 @@ CREATE TABLE raw_summary (
 );
 
 
-CREATE TYPE RAW_EVENT_TYPE AS ENUM (
-    'start', 
-    'stop'
-);
+CREATE TYPE RAW_EVENT_TYPE AS ENUM ('start', 'stop');
 
 CREATE TABLE raw_events (
     activity_id    char(14),

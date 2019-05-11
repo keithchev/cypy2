@@ -31,7 +31,7 @@ CORS(app)
 
 user = 'keith'
 host = 'localhost'
-dbname = 'cypy2'
+dbname = 'cypy2v2'
 conn = psycopg2.connect(user=user, host=host, dbname=dbname)
 manager = cypy2.ActivityManager.from_db(conn)
 
@@ -91,7 +91,10 @@ def records(activity_id):
     for column in columns:
         if column not in records.columns or column in ['geom', 'geom4d']:
             continue
-        data[column] = _nan_to_none(records[column].iloc[::sampling])
+        values = records[column].iloc[::sampling].tolist()
+        if column in ['lat', 'lon']:
+            values = [float(v) if v is not None else None for v in values]
+        data[column] = _nan_to_none(values)
  
     return flask.jsonify(data)
 

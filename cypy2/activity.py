@@ -358,7 +358,7 @@ class Activity(object):
             dbutils.execute_query(conn, full_query, value, commit=True)
 
 
-    def process_records(self):
+    def process_records(self, hack=False):
         '''
         Generate processed records from raw records
         
@@ -380,15 +380,16 @@ class Activity(object):
         #
         # temporary hack to correct fitparse bug
         #
-        if 'speed' in records.columns:
-            speed = records.speed.values
-            if max(speed) > 30:
-                speed = speed/1000
-                records['speed'] = speed
+        if hack:
+            if 'speed' in records.columns:
+                speed = records.speed.values
+                if max(speed) > 30:
+                    speed = speed/1000
+                    records['speed'] = speed
 
-        if 'altitude' in records.columns:
-            alt = records.altitude.values
-            records['altitude'] = (alt - 2500)/5.
+            if 'altitude' in records.columns:
+                alt = records.altitude.values
+                records['altitude'] = (alt - 2500)/5.
         #
         # ---------------------------------------------------------------------------------------- 
 
