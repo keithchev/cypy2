@@ -790,7 +790,7 @@ class LocalActivity(Activity):
         return activity
 
 
-    def _raw_data_to_db(self, conn, kinds=None):
+    def _raw_data_to_db(self, conn, kinds=None, raise_errors=True):
         '''
         Insert or update an activity's *raw* data in a cypy2 database
 
@@ -813,7 +813,7 @@ class LocalActivity(Activity):
         if kinds is None or 'metadata' in kinds:
             metadata = pd.DataFrame(data=[self.metadata])
             try:
-                dbutils.dataframe_to_table(conn, 'metadata', metadata, raise_errors=True)
+                dbutils.dataframe_to_table(conn, 'metadata', metadata, raise_errors=raise_errors)
                 conn.commit()
             except psycopg2.Error as error:
                 print('Error inserting metadata: %s' % error)
@@ -827,7 +827,7 @@ class LocalActivity(Activity):
         # ------------------------------------------------------------------------------------
         if kinds is None or 'events' in kinds:
             events = self.events(kind='raw')
-            dbutils.dataframe_to_table(conn, 'raw_events', events, raise_errors=True)
+            dbutils.dataframe_to_table(conn, 'raw_events', events, raise_errors=raise_errors)
             conn.commit()
 
         # ------------------------------------------------------------------------------------
@@ -844,7 +844,7 @@ class LocalActivity(Activity):
             db_columns = dbutils.get_column_names(conn, 'raw_summary')
             summary = summary[list(set(summary.columns).intersection(db_columns))]
 
-            dbutils.dataframe_to_table(conn, 'raw_summary', summary, raise_errors=False)
+            dbutils.dataframe_to_table(conn, 'raw_summary', summary, raise_errors=raise_errors)
             conn.commit()
 
         # ------------------------------------------------------------------------------------
@@ -1110,20 +1110,17 @@ class LocalActivity(Activity):
         summary = fit_data['session'].copy()
         records = fit_data['record'].copy()
 
-        events['activity_id'] = activity_id
-        summary['activity_id'] = activity_id
-    
         # column renaming for the database
         records.rename(columns={'timestamp': 'timepoint'}, inplace=True)
         events.rename(columns={'timestamp': 'event_time'}, inplace=True)
 
-        # for now, keep only the event_type and time columns for 'timer' events 
-        # (which are the starts and stops)
-        events = events.loc[events.event=='timer'][['event_type', 'event_time']]
-
         # 'stop_all' to 'stop', etc
         events.replace(to_replace=re.compile('stop(.*)$'), value='stop', inplace=True)
         events.replace(to_replace=re.compile('start(.*)$'), value='start', inplace=True)
+
+        # for now, keep only the event_type and time columns for 'timer' events 
+        # (which are the starts and stops)
+        events = events.loc[events.event=='timer'][['event_type', 'event_time']]
 
         # check for pairs of start/stop events that have the same timestamp
         # (this is rare, but real)
@@ -1145,5 +1142,9 @@ class LocalActivity(Activity):
         events = events.reset_index(drop=True)
         if events.iloc[-1].event_type=='stop' and events.iloc[-2].event_type=='stop':
             events = events.drop(len(events) - 1, axis=0)
+
+        # finally, add the activity_id column
+        events['activity_id'] = activity_id
+        summary['activity_id'] = activity_id
 
         return events, summary, records
