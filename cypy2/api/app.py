@@ -148,6 +148,34 @@ def near(lat, lon):
     return flask.jsonify(data)
 
 
+@app.route('/trajectories')
+def trajectories():
+
+    activity_ids = request.args.get('activity_ids').split(',')
+    activity_ids = sql.SQL(',').join([sql.Literal(activity_id) for activity_id in activity_ids])
+
+    tolerance = request.args.get('tolerance')
+    if not tolerance:
+        tolerance = 0
+
+    query = sql.SQL('''
+        select row_to_json(r) from (
+            select 'FeatureCollection' as "type",
+            array_to_json(array_agg(feature_objects)) as features from (
+                select 'Feature' as "type", 
+                ST_AsGeoJSON(ST_Simplify(geom, {tolerance}))::json as geometry,
+                json_build_object('activity_id', activity_id)::json as properties
+                from proc_records where activity_id in ({activity_ids})) as feature_objects
+            ) as r''')
+
+    query = query.format(
+            activity_ids=activity_ids,
+            tolerance=sql.SQL(tolerance))
+
+    result = dbutils.execute_query(conn, query)
+    return flask.jsonify(result[0][0])
+
+
 if __name__=='__main__':
     app.run(debug=True)
 
