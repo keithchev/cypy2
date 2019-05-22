@@ -88,7 +88,8 @@ def records(activity_id):
     for column in columns:
         if column not in records.columns:
             continue
-        data[column] = records[column].iloc[::sampling].tolist()
+        values = records[column].iloc[::sampling].tolist()
+        data[column] = [None if pd.isna(val) else val for val in values]
  
     return flask.jsonify(data)
 

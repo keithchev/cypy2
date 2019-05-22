@@ -200,12 +200,10 @@ class Activity(object):
         records = pd.DataFrame(data.to_dict(orient='records').pop())
         records.dropna(axis=1, how='all', inplace=True)
 
-        # coerce NaNs to None and type-coerce lat/lon, which are Decimal objects
+        # type-coerce lat/lon, which are returned by psycopg2 as Decimal objects
         for column in records.columns:
-            values = records[column].values
             if column in ['lat', 'lon']:
-                values = [float(v) if v is not None else None for v in values]
-            records[column] = [None if pd.isna(val) else val for val in values]
+                records[column] = [float(v) if v is not None else None for v in records[column]]
 
         processed_data = {'events': None, 'summary': None, 'records': records}
         return processed_data
