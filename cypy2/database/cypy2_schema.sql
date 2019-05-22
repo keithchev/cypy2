@@ -174,9 +174,10 @@ CREATE TABLE proc_records (
      -- git commit when the row was created 
     commit_hash     char(40) NOT NULL,
 
-    -- 2D and 4D GPS trajectories (4D includes elapsed_time and altitude)
-    geom            geometry(LineString, 4326),
-    geom4d          geometry(LineStringZM, 4326),
+    -- postGIS geomtries to represent the GPS trajectories 
+    -- (SRID 4326 is WGS84 and corresponds to decimal lat/lon coordinates)
+    geom            geometry(LINESTRING, 4326),
+    geomz           geometry(LINESTRINGZ, 4326),
 
     elapsed_time    int[],
     lat             numeric(9, 6)[],   -- decimal degrees 

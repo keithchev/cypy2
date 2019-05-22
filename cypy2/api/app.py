@@ -107,7 +107,7 @@ def trajectory(activity_id):
         tolerance = 0
 
     query = sql.SQL(
-        'select ST_AsGeoJSON(ST_Simplify(geom, {tolerance})) from proc_records')
+        'select ST_AsGeoJSON(ST_Simplify(geomz, {tolerance})) from proc_records')
 
     query = sql.SQL(' ').join([
         query.format(tolerance=sql.SQL(tolerance)), 

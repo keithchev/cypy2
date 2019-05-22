@@ -16,9 +16,8 @@ where (activity_id, date_created) not in (
 	select activity_id, max(date_created) from proc_records group by activity_id
 );
 
--- add an array-type column
-alter table proc_records add column power_ma int[];
-
+-- add a geometry column
+alter table proc_records add column geomz geometry(LINESTRINGZ, 4326);
 
 -- the nth-most-recent activity of each type
 select activity_id, activity_type from (

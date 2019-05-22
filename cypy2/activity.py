@@ -194,9 +194,9 @@ class Activity(object):
         columns = [
             'activity_id', 'commit_hash', 
             'date_created', 'date_modified', 
-            'geom', 'geom4d']
+            'geom', 'geomz', 'geom4d']
     
-        data.drop(columns, axis=1, inplace=True)
+        data.drop(columns, axis=1, inplace=True, errors='ignore')
         records = pd.DataFrame(data.to_dict(orient='records').pop())
         records.dropna(axis=1, how='all', inplace=True)
 
@@ -329,8 +329,11 @@ class Activity(object):
             print('Warning: no lat/lon coords for activity %s' % activity_id)
             return
 
-        # note that this column order matters (it corresponds to the order required by LineStringZM)
-        coordinates = records[['lon', 'lat', 'altitude', 'elapsed_time']].copy()
+        # here we construct the array of coordinates; note that we are putting elapsed_time,
+        # and not elevation, in the 'z' dimension; this is a bit of a hack, but it is the only way
+        # to include timestamps in the trajectories and still use GeoJSON
+        # (because GeoJSON does not allow an 'M' dimension)
+        coordinates = records[['lon', 'lat', 'elapsed_time']].copy()
 
         # postGIS converts nulls to zeros, so we have to drop all rows with any nans        
         coordinates.dropna(how='any', axis=0, inplace=True)
@@ -338,31 +341,29 @@ class Activity(object):
             print('Warning: all lat/lon coords for activity %s are missing' % activity_id)
             return
 
-        # construct the GeoJSON for the full four-dimensional LINESTRINGZM geometry 
-        # (i.e., with elevation (Z) and timestamp (M))
-        geom = {
+        # construct the GeoJSON
+        geojson = json.dumps({
             'type': 'LineString',
             'coordinates': coordinates.values.tolist()
-        }
-        value = json.dumps(geom)
+        })
 
-        # note that the hard-coded projection here (4326) must match that specified in the schema
+        # note that the hard-coded SRID here (4326) must match that specified in the schema
         query = sql.SQL(
             'update proc_records set {column} = {st_force}(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326))')
 
-        # note that ST_Force2D here implies the 'geom' column must be a LineString
+        # this 2D column is mostly for convenience in pgAdmin4, which cannot preview 3D geometries
         query_2d = query.format(
             column=sql.Identifier('geom'),
             st_force=sql.SQL('ST_Force2D'))
 
-        # and ST_Force4D implies the 'geom4d' column must be a LineStringZM
-        query_4d = query.format(
-            column=sql.Identifier('geom4d'),
-            st_force=sql.SQL('ST_Force4D'))
+        # we use ST_Force3D here only for symmetry; we don't actually need it
+        query_3d = query.format(
+            column=sql.Identifier('geomz'),
+            st_force=sql.SQL('ST_Force3D'))
 
-        for query in [query_2d, query_4d]:
+        for query in [query_2d, query_3d]:
             full_query = sql.SQL(' ').join([query, dbutils.where_clause(selector)])
-            dbutils.execute_query(conn, full_query, value, commit=True)
+            dbutils.execute_query(conn, full_query, geojson, commit=True)
 
 
     def process_records(self, hack=False):
