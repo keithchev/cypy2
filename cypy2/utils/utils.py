@@ -126,6 +126,8 @@ def weighted_linregress(x, y, w):
     -------
     The slope, offset, and RMSE (mean of the squared residuals)
 
+    TODO: document what happens when there are nans in x, y, or w
+
     '''
 
     X = np.concatenate((np.ones((len(x), 1)), x[:, None]), axis=1)

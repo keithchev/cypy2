@@ -184,9 +184,10 @@ CREATE TABLE proc_records (
     distance        real[],   -- meters
     altitude        real[],   -- meters
     grade           real[],   -- percent
-    speed           real[],   -- m/s
-    vam             real[],   -- m/h
+    speed           real[],   -- meters per second
+    vam             real[],   -- meters per hour
     power           int[],    -- watts
+    power_ma        int[],    -- 30-sec moving average (for normalized power)
     cadence         int[],    -- rpm
     heart_rate      int[],    -- bpm
 

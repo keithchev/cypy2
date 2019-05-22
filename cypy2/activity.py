@@ -367,10 +367,10 @@ class Activity(object):
          - calculates elapsed time in seconds
          - interpolates the raw records to a constant sampling rate
          - generates a pause mask from the raw events
-         - calculates VAM from altitude
+         - calculates VAM and grade from altitude
+         - calculates 30-second moving average of power
          - various unit conversions
 
-        TODO: calculate additional columns (grade, vert, kJ)
 
         '''
 
@@ -417,14 +417,35 @@ class Activity(object):
 
         # ----------------------------------------------------------------------------------------
         #
-        # interpolate the raw records and calculate the pause mask and VAM
+        # interpolate the raw records and calculate the pause mask
         #
         # ----------------------------------------------------------------------------------------
         records = self._interpolate_records(records, constants.interpolation_timestep)
         records['pause_mask'] = self._calculate_pause_mask(records)
 
+
+        # ----------------------------------------------------------------------------------------
+        #
+        # calculate VAM and grade
+        # 
+        # note that activities from Wahoo have a raw 'grade' column, 
+        # which will be overwritten here
+        #
+        # ----------------------------------------------------------------------------------------
         if 'altitude' in records.columns:
-            records['vam'] = self._calculate_vam(records.altitude)
+            vam, grade = self._calculate_slopes(records)
+            records['vam'] = vam
+            records['grade'] = grade
+
+
+        # ----------------------------------------------------------------------------------------
+        #
+        # 30-second moving average of power
+        # (for calculating normalized power)
+        #
+        # ----------------------------------------------------------------------------------------
+        if 'power' in records.columns:
+            records['power_ma'] = self._calculate_moving_average(records, 'power', window_size=30)
 
 
         # ----------------------------------------------------------------------------------------
@@ -530,27 +551,54 @@ class Activity(object):
 
 
     @staticmethod
-    def _calculate_vam(altitude):
+    def _calculate_moving_average(records, column, window_size):
         '''
-        Calculate VAM (vertical ascent velocity in meters per hour)
-        using an exponentially weighted linear regression in a sliding window
-        
-        Empirically, this yields a less noisy estimate of the slope of the altitude
-        than the other obvious approach, which is to take a moving average of the derivative
+        Calculate a moving average of one column of the records dataframe
+        The moving average is nan whenever the window overlaps a pause,
+        according to the values in records.pause_mask
 
-        It also has the advantage that the residuals can be interpreted as a measure of local linearity,
-        which may be useful because local *non*linearities usually correspond
-        to starts/stops or uphill-downhill transitions
+        '''
+        # check for constant timestep
+        assert set(np.diff(records.index.values))==set([1])
+
+        windows = utils.sliding_window(records[column].values, window_size, 1)
+        pause_windows = utils.sliding_window(records.pause_mask.values, window_size, 1)
+
+        # use the fact that np.mean returns nan when any value is nan
+        # to set the average to nan whenever the window overlaps a pause
+        windows[pause_windows] = np.nan
+        ma = np.mean(windows, axis=1)
+        ma = np.concatenate(([np.nan] * (window_size - 1), ma))
+
+        return ma
+
+
+    @staticmethod
+    def _calculate_slopes(records):
+        '''
+        Calculate time and distance derivatives of the altitude 
+        using an exponentially weighted linear regression in a moving window
+    
+        The time derivative corresponds to the ascent velocity or VAM and is returned in meters per hour;
+        the distance derivative corresponds to the grade and is returned in units of meter per meter.
+     
+        Empirically, this method yields a less noisy estimate of the derivatives
+        than the other obvious approach, which is to take a moving average before or after
+        (it makes no difference) calculating the naive discrete derivative. 
+
+        This method also has the advantage that the residuals can be interpreted 
+        as a measure of local linearity, which may be useful because local *non*linearities 
+        usually correspond to starts/stops or uphill-downhill transitions.
 
         Parameters
         ----------
-        altitude : pd.Series of raw altitude values in meters, indexed by elapsed time
-                   **must be interpolated to constant one-second timestep**
+        records : DataFrame of raw distance and altitude values in meters, 
+                  indexed by elapsed time and interpolated to a constant one-second timestep
 
         '''
 
         # check for constant timestep
-        assert set(np.diff(altitude.index.values))==set([1])
+        assert set(np.diff(records.index.values))==set([1])
 
         # half life of the exponential weights in seconds
         # (a half life of 7sec corresponds to a decay rate of ~10sec)
@@ -563,25 +611,47 @@ class Activity(object):
         weights /= weights.sum()
         weights = weights[::-1]
 
-        y = altitude.values
-        x_window = np.arange(window_sz)
-        y_windows = utils.sliding_window(y, window_sz, 1)
+        time_window = np.arange(window_sz)
+        pause_windows = utils.sliding_window(records.pause_mask.values, window_sz, 1)
+        distance_windows = utils.sliding_window(records.distance.values, window_sz, 1)
+        altitude_windows = utils.sliding_window(records.altitude.values, window_sz, 1)
 
-        slopes, resids = [], []
-        for y_window in y_windows:
-            slope, offset, res = utils.weighted_linregress(x_window, y_window, weights)
-            slopes.append(slope)
-            resids.append(res)
+        vam, grade = [], []
+        for dist_window, alt_window, pause_window in zip(distance_windows, altitude_windows, pause_windows):
 
-        vam, resids = np.array(slopes), np.array(resids)
+            if np.any(pause_window):
+                vam.append(np.nan)
+                grade.append(np.nan)
+                continue
+            
+            # calculate the VAM   
+            # (no need to worry about LinAlgError here because time_window is always the same)
+            slope, offset, residual = utils.weighted_linregress(time_window, alt_window, weights)
+            vam.append(slope)
+
+            # calculate the grade
+            try:
+                slope, offset, residual = utils.weighted_linregress(dist_window, alt_window, weights)
+            except np.linalg.LinAlgError:
+                slope = np.nan
+
+            # hard-coded cutoff on realistic slopes
+            # (noise can lead to very high slopes)            
+            if np.abs(slope) > .3:
+                slope = np.nan
+            grade.append(slope)
+
+
+        vam, grade  = np.array(vam), np.array(grade)
 
         # add back the missing initial values
         vam = np.concatenate(([np.nan] * (window_sz - 1), vam))
+        grade = np.concatenate(([np.nan] * (window_sz - 1), grade))
 
         # meters per sec to meters per hour
         vam *= constants.seconds_per_hour
 
-        return vam
+        return vam, grade
 
 
     def summary(self, kind='raw'):

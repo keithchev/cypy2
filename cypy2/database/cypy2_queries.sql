@@ -5,12 +5,19 @@
 -- number of timepoints for each activity
 select activity_id, array_length(altitude, 1) as len from proc_records
 
+-- find rows with an empty/non-empty array in the given array-type column
+select activity_id from raw_records
+where array_length("column_name", 1) is not null
+order by activity_id
 
 -- delete all but the most recent processed records for each activity
 delete from proc_records
 where (activity_id, date_created) not in (
 	select activity_id, max(date_created) from proc_records group by activity_id
 );
+
+-- add an array-type column
+alter table proc_records add column power_ma int[];
 
 
 -- the nth-most-recent activity of each type
